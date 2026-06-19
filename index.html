@@ -25,6 +25,43 @@
 </head>
 <body class="p-4 md:p-8 text-gray-800">
 
+    <!-- ================= VENTANA DE INGRESO ================= -->
+    <div id="loginModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 border border-slate-200">
+            <div class="text-center mb-6">
+                <div class="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-700 to-indigo-800 text-white flex items-center justify-center text-2xl mb-3">
+                    <i class="fas fa-server"></i>
+                </div>
+                <h2 class="text-2xl font-black text-slate-800">Control Anual de Mantenimiento DCSM</h2>
+                <p class="text-sm text-slate-500 mt-1">Selecciona tu modo de ingreso</p>
+            </div>
+
+            <!-- Selección de modo -->
+            <div id="loginChoice" class="space-y-3">
+                <button onclick="iniciarDashboard(false)" class="w-full flex items-center gap-4 px-5 py-4 rounded-xl border-2 border-slate-200 hover:border-blue-500 hover:bg-blue-50 transition text-left">
+                    <i class="fas fa-eye text-blue-600 text-xl w-6 text-center"></i>
+                    <span><span class="block font-bold text-slate-800">Modo Lectura</span><span class="block text-xs text-slate-500">Solo visualización, sin editar</span></span>
+                </button>
+                <button onclick="mostrarPinAdmin()" class="w-full flex items-center gap-4 px-5 py-4 rounded-xl border-2 border-slate-200 hover:border-blue-500 hover:bg-blue-50 transition text-left">
+                    <i class="fas fa-user-shield text-blue-600 text-xl w-6 text-center"></i>
+                    <span><span class="block font-bold text-slate-800">Modo Administrador</span><span class="block text-xs text-slate-500">Editar tareas y guardar cambios</span></span>
+                </button>
+            </div>
+
+            <!-- Ingreso de clave -->
+            <div id="loginPin" class="hidden space-y-3">
+                <label class="block text-sm font-bold text-slate-700">Clave de administrador</label>
+                <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="••••" class="w-full text-center text-2xl tracking-[0.5em] font-black border-2 border-slate-200 rounded-xl py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
+                <p id="pinError" class="hidden text-sm text-rose-600 font-semibold"></p>
+                <div class="flex gap-2 pt-1">
+                    <button onclick="volverChoice()" class="flex-1 px-4 py-3 rounded-xl border-2 border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition">Volver</button>
+                    <button id="pinSubmit" onclick="validarPin()" class="flex-1 px-4 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition">Ingresar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- ====================================================== -->
+
     <div class="max-w-7xl mx-auto space-y-6">
         
         <!-- HEADER PRINCIPAL -->
@@ -240,8 +277,9 @@
         const SUPABASE_URL = 'https://xnlqyxxyryqyziksmajn.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhubHF5eHh5cnlxeXppa3NtYWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NzQxODEsImV4cCI6MjA5NzQ1MDE4MX0.uKhq16RBJSoEKLdjD04DTrHnBOg9IxU2cpREQfSf8S4';
         const DASHBOARD_ID = 'dcsm-main';
-        // Modo vista: si el link lleva ?modo=vista, el dashboard es de SOLO LECTURA (para el cliente)
-        const VIEW_MODE = new URLSearchParams(location.search).get('modo') === 'vista';
+        // El modo (lectura/administrador) se decide en la ventana de ingreso.
+        // Por defecto SOLO LECTURA hasta validar la clave de administrador.
+        let VIEW_MODE = true;
 
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         let dirty = false; // hay cambios sin guardar
@@ -336,12 +374,66 @@
         }
         // ==================================================================
 
-        document.addEventListener('DOMContentLoaded', async () => {
+        // ===================== VENTANA DE INGRESO (LOGIN) =====================
+        function mostrarPinAdmin() {
+            document.getElementById('loginChoice').classList.add('hidden');
+            document.getElementById('loginPin').classList.remove('hidden');
+            const inp = document.getElementById('pinInput');
+            inp.value = '';
+            setTimeout(() => inp.focus(), 50);
+        }
+
+        function volverChoice() {
+            document.getElementById('loginPin').classList.add('hidden');
+            document.getElementById('loginChoice').classList.remove('hidden');
+            document.getElementById('pinError').classList.add('hidden');
+        }
+
+        async function validarPin() {
+            const pin = document.getElementById('pinInput').value.trim();
+            const err = document.getElementById('pinError');
+            const btn = document.getElementById('pinSubmit');
+            err.classList.add('hidden');
+            btn.disabled = true; btn.innerText = 'Validando…';
+            try {
+                // La clave se valida DENTRO de Supabase; nunca llega al navegador
+                const { data, error } = await sb.rpc('verificar_pin', { pin_ingresado: pin });
+                if (error) throw error;
+                if (data === true) {
+                    iniciarDashboard(true);
+                } else {
+                    err.innerHTML = '<i class="fas fa-exclamation-circle"></i> Clave incorrecta';
+                    err.classList.remove('hidden');
+                    btn.disabled = false; btn.innerText = 'Ingresar';
+                }
+            } catch (e) {
+                console.error('Error validando PIN:', e);
+                err.innerHTML = '<i class="fas fa-exclamation-circle"></i> No se pudo validar (revisa conexión / función en Supabase)';
+                err.classList.remove('hidden');
+                btn.disabled = false; btn.innerText = 'Ingresar';
+            }
+        }
+
+        async function iniciarDashboard(esAdmin) {
+            VIEW_MODE = !esAdmin;
+            const modal = document.getElementById('loginModal');
+            if (modal) modal.style.display = 'none';
             initData();
             initUI();
             await loadState();   // lee lo guardado en Supabase (no escribe)
             updateAll();
             if (VIEW_MODE) aplicarModoVista();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Permitir Enter en el campo de clave
+            const inp = document.getElementById('pinInput');
+            if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') validarPin(); });
+
+            // Atajo: ?modo=vista entra directo en lectura (sin mostrar la ventana)
+            const forzarVista = new URLSearchParams(location.search).get('modo') === 'vista';
+            if (forzarVista) iniciarDashboard(false);
+            // Si no, queda visible la ventana de ingreso
         });
 
         // Aviso si intenta cerrar/recargar con cambios sin guardar
