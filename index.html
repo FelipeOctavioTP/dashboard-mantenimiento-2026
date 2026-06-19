@@ -39,6 +39,9 @@
                     <span id="syncDot" class="w-2 h-2 rounded-full bg-slate-300"></span>
                     <span id="syncText">Conectando…</span>
                 </div>
+                <button id="btnGuardar" onclick="guardarCambios()" disabled class="mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-white/30 text-white/80 cursor-default transition">
+                    <i class="fas fa-check"></i> Sin cambios pendientes
+                </button>
             </div>
         </div>
 
@@ -103,7 +106,7 @@
                 <!-- NUEVO: Panel de Especialidad (Áreas) -->
                 <div class="bg-white p-5 rounded-2xl shadow-md border border-gray-100 flex-1">
                     <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                        <i class="fas fa-industry text-blue-600"></i> Avance por Área (SLA a la fecha)
+                        <i class="fas fa-industry text-blue-600"></i> Avance por Área (sobre plan anual)
                     </h2>
                     <div class="space-y-5" id="area-stats">
                         <!-- Llenado dinámicamente -->
@@ -111,6 +114,23 @@
                 </div>
             </div>
 
+        </div>
+
+        <!-- GRÁFICO: ACTIVIDADES TIPO A/B/C — AVANCE A LA FECHA -->
+        <div class="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    <i class="fas fa-layer-group text-blue-600"></i> Actividades ejecutadas por Tipo (avance a la fecha)
+                </h2>
+                <div class="inline-flex rounded-xl border border-gray-200 overflow-hidden text-xs font-bold">
+                    <button id="btnTipoMes" onclick="setTipoChartMode('mes')" class="px-4 py-2 bg-blue-600 text-white transition">Por Mes</button>
+                    <button id="btnTipoSemana" onclick="setTipoChartMode('semana')" class="px-4 py-2 bg-white text-gray-600 hover:bg-gray-50 transition">Por Semana</button>
+                </div>
+            </div>
+            <div class="relative w-full h-[360px]">
+                <canvas id="tipoChart"></canvas>
+            </div>
+            <p class="text-xs text-gray-400 mt-2" id="tipoChartCaption">Actividades ejecutadas hasta la semana actual, por criticidad (A crítico · B medio · C rutina).</p>
         </div>
 
         <!-- CONTROL DE TIEMPO / SLIDER -->
@@ -213,6 +233,8 @@
         
         let chartInstance = null;
         let riskChartInstance = null;
+        let tipoChartInstance = null;
+        let tipoChartMode = 'mes';
 
         // ===================== CONFIGURACIÓN SUPABASE =====================
         const SUPABASE_URL = 'https://xnlqyxxyryqyziksmajn.supabase.co';
@@ -222,15 +244,35 @@
         const VIEW_MODE = new URLSearchParams(location.search).get('modo') === 'vista';
 
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        let saveTimer = null;
+        let dirty = false; // hay cambios sin guardar
 
         function setSync(estado, texto) {
             const dot = document.getElementById('syncDot');
             const txt = document.getElementById('syncText');
             if (!dot || !txt) return;
-            const colores = { ok: 'bg-emerald-400', saving: 'bg-amber-400 animate-alert', err: 'bg-rose-400', idle: 'bg-slate-300' };
+            const colores = { ok: 'bg-emerald-400', saving: 'bg-amber-400 animate-alert', err: 'bg-rose-400', warn: 'bg-amber-400', idle: 'bg-slate-300' };
             dot.className = 'w-2 h-2 rounded-full ' + (colores[estado] || colores.idle);
             txt.innerText = texto;
+        }
+
+        function actualizarBotonGuardar() {
+            const btn = document.getElementById('btnGuardar');
+            if (!btn) return;
+            if (dirty) {
+                btn.disabled = false;
+                btn.className = 'mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-white text-blue-700 hover:bg-blue-50 transition shadow';
+                btn.innerHTML = '<i class="fas fa-save"></i> Guardar cambios';
+            } else {
+                btn.disabled = true;
+                btn.className = 'mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-white/30 text-white/80 cursor-default transition';
+                btn.innerHTML = '<i class="fas fa-check"></i> Sin cambios pendientes';
+            }
+        }
+
+        function markDirty() {
+            dirty = true;
+            setSync('warn', 'Cambios sin guardar');
+            actualizarBotonGuardar();
         }
 
         async function loadState() {
@@ -258,17 +300,20 @@
                     }
                     setSync('ok', VIEW_MODE ? 'Solo lectura' : 'Guardado');
                 } else {
-                    // No existe registro aún: guardamos el estado inicial como semilla
-                    await saveState(true);
+                    // No hay registro guardado todavía: se creará al pulsar "Guardar cambios"
+                    setSync('idle', VIEW_MODE ? 'Sin datos' : 'Sin datos guardados');
                 }
             } catch (e) {
                 console.error('Supabase load error:', e);
-                setSync('err', 'Sin conexión (local)');
+                setSync('err', 'Sin conexión');
             }
+            dirty = false;
+            actualizarBotonGuardar();
         }
 
-        async function saveState(inmediato = false) {
-            if (VIEW_MODE) return; // el cliente en modo vista nunca escribe
+        // Guardado MANUAL: solo se ejecuta al pulsar el botón "Guardar cambios"
+        async function guardarCambios() {
+            if (VIEW_MODE) return;
             const payload = {
                 id: DASHBOARD_ID,
                 data: {
@@ -277,35 +322,39 @@
                 },
                 updated_at: new Date().toISOString()
             };
-            const ejecutar = async () => {
-                setSync('saving', 'Guardando…');
-                try {
-                    const { error } = await sb.from('dashboards').upsert(payload, { onConflict: 'id' });
-                    if (error) throw error;
-                    setSync('ok', 'Guardado');
-                } catch (e) {
-                    console.error('Supabase save error:', e);
-                    setSync('err', 'Error al guardar');
-                }
-            };
-            if (inmediato) return ejecutar();
-            clearTimeout(saveTimer);
-            saveTimer = setTimeout(ejecutar, 600); // agrupa cambios rápidos
+            setSync('saving', 'Guardando…');
+            try {
+                const { error } = await sb.from('dashboards').upsert(payload, { onConflict: 'id' });
+                if (error) throw error;
+                dirty = false;
+                setSync('ok', 'Guardado');
+                actualizarBotonGuardar();
+            } catch (e) {
+                console.error('Supabase save error:', e);
+                setSync('err', 'Error al guardar');
+            }
         }
         // ==================================================================
 
         document.addEventListener('DOMContentLoaded', async () => {
             initData();
             initUI();
-            await loadState();   // sobrescribe el estado con lo guardado en Supabase
+            await loadState();   // lee lo guardado en Supabase (no escribe)
             updateAll();
             if (VIEW_MODE) aplicarModoVista();
         });
 
+        // Aviso si intenta cerrar/recargar con cambios sin guardar
+        window.addEventListener('beforeunload', (e) => {
+            if (dirty && !VIEW_MODE) { e.preventDefault(); e.returnValue = ''; }
+        });
+
         function aplicarModoVista() {
-            // Oculta el botón de auto-completar (acción de edición)
+            // Oculta acciones de edición
             const btn = document.querySelector('button[onclick="marcarAnterioresEjecutadas()"]');
             if (btn) btn.style.display = 'none';
+            const bg = document.getElementById('btnGuardar');
+            if (bg) bg.style.display = 'none';
         }
 
         function initData() {
@@ -348,7 +397,7 @@
                 state.currentWeek = parseInt(e.target.value);
                 document.getElementById('currentWeekDisplay').innerText = `S${state.currentWeek}`;
                 updateAll();
-                if (!VIEW_MODE) saveState();
+                if (!VIEW_MODE) markDirty();
             });
         }
 
@@ -358,7 +407,7 @@
             if(t) {
                 t.ejecutado = !t.ejecutado;
                 updateAll();
-                saveState();
+                markDirty();
             }
         }
 
@@ -368,7 +417,7 @@
                 if(t.Semana_Num <= state.currentWeek) t.ejecutado = true;
             });
             updateAll();
-            saveState();
+            markDirty();
         }
 
         function updateAll() {
@@ -377,6 +426,77 @@
             renderChart();
             renderRiskChart();
             renderAreaStats();
+            renderTipoChart();
+        }
+
+        function setTipoChartMode(mode) {
+            tipoChartMode = mode;
+            const activo = 'px-4 py-2 bg-blue-600 text-white transition';
+            const inactivo = 'px-4 py-2 bg-white text-gray-600 hover:bg-gray-50 transition';
+            document.getElementById('btnTipoSemana').className = mode === 'semana' ? activo : inactivo;
+            document.getElementById('btnTipoMes').className = mode === 'mes' ? activo : inactivo;
+            renderTipoChart();
+        }
+
+        function renderTipoChart() {
+            const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+            let labels, A, B, C;
+
+            if (tipoChartMode === 'mes') {
+                labels = meses;
+                A = Array(12).fill(0); B = Array(12).fill(0); C = Array(12).fill(0);
+                state.tasks.forEach(t => {
+                    // Avance a la fecha: solo ejecutadas y hasta la semana actual
+                    if (!t.ejecutado || t.Semana_Num > state.currentWeek) return;
+                    let m = Math.min(12, Math.ceil(t.Semana_Num / (52/12))) - 1;
+                    if (t.Tipo === 'A') A[m]++; else if (t.Tipo === 'B') B[m]++; else C[m]++;
+                });
+            } else {
+                labels = Array.from({length: 52}, (_, i) => 'S' + (i + 1));
+                A = Array(52).fill(0); B = Array(52).fill(0); C = Array(52).fill(0);
+                state.tasks.forEach(t => {
+                    if (!t.ejecutado || t.Semana_Num > state.currentWeek) return;
+                    let w = t.Semana_Num - 1;
+                    if (t.Tipo === 'A') A[w]++; else if (t.Tipo === 'B') B[w]++; else C[w]++;
+                });
+            }
+
+            if (tipoChartInstance) tipoChartInstance.destroy();
+            tipoChartInstance = new Chart(document.getElementById('tipoChart').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [
+                        { label: 'Tipo A (Crítico)', data: A, backgroundColor: '#e11d48', borderRadius: 3 },
+                        { label: 'Tipo B (Medio)',   data: B, backgroundColor: '#f59e0b', borderRadius: 3 },
+                        { label: 'Tipo C (Rutina)',  data: C, backgroundColor: '#3b82f6', borderRadius: 3 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top', labels: { font: { weight: 'bold' } } },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    scales: {
+                        x: {
+                            stacked: true,
+                            grid: { display: false },
+                            ticks: {
+                                autoSkip: false,
+                                maxRotation: tipoChartMode === 'mes' ? 0 : 90,
+                                minRotation: tipoChartMode === 'mes' ? 0 : 90,
+                                font: { size: tipoChartMode === 'mes' ? 12 : 9 }
+                            }
+                        },
+                        y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+                    }
+                }
+            });
+
+            const cap = document.getElementById('tipoChartCaption');
+            if (cap) cap.innerText = `Actividades ejecutadas hasta la semana actual (S${state.currentWeek}), por criticidad (A crítico · B medio · C rutina).`;
         }
 
         function calculateKPIs() {
@@ -411,9 +531,10 @@
         function renderAreaStats() {
             const count = { Clima: {prog:0, real:0}, Energía: {prog:0, real:0}, SSGG: {prog:0, real:0} };
             
+            // Avance sobre el TOTAL ANUALIZADO: prog = todo el plan del año, real = todo lo ejecutado
             state.tasks.forEach(t => {
                 let area = getAreaName(t.Sistema);
-                if(count[area] !== undefined && t.Semana_Num <= state.currentWeek) {
+                if(count[area] !== undefined) {
                     count[area].prog += t.Programado;
                     if(t.ejecutado) count[area].real += t.Programado;
                 }
@@ -529,7 +650,18 @@
                     responsive: true, 
                     maintainAspectRatio: false, 
                     plugins: { legend: { position: 'top', labels: { font: { weight: 'bold' } } } },
-                    scales: { x: { grid: { display: false } }, y: { beginAtZero: true } } 
+                    scales: { 
+                        x: { 
+                            grid: { display: false }, 
+                            ticks: { 
+                                autoSkip: false, 
+                                maxRotation: 90, 
+                                minRotation: 90, 
+                                font: { size: 9 } 
+                            } 
+                        }, 
+                        y: { beginAtZero: true } 
+                    } 
                 }
             });
         }
