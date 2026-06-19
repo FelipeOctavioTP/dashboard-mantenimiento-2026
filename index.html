@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control Anual de Mantenimiento DCSM - Final V0.12</title>
+    <title>Control Anual de Mantenimiento DCSM - V0.13 (Persistente)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; }
@@ -34,6 +35,10 @@
             <div class="bg-white/10 backdrop-blur-md p-4 rounded-2xl text-right border border-white/20 min-w-[200px]">
                 <p class="text-xs text-blue-200 font-semibold uppercase">Total Planificado 2026</p>
                 <p class="text-3xl font-black text-white" id="total-anual-assets">0 activos</p>
+                <div id="syncStatus" class="mt-2 inline-flex items-center gap-2 text-xs font-bold px-3 py-1 rounded-full bg-white/15 border border-white/20">
+                    <span id="syncDot" class="w-2 h-2 rounded-full bg-slate-300"></span>
+                    <span id="syncText">Conectando…</span>
+                </div>
             </div>
         </div>
 
@@ -98,7 +103,7 @@
                 <!-- NUEVO: Panel de Especialidad (Áreas) -->
                 <div class="bg-white p-5 rounded-2xl shadow-md border border-gray-100 flex-1">
                     <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                        <i class="fas fa-industry text-blue-600"></i> Avance por Área (Anual)
+                        <i class="fas fa-industry text-blue-600"></i> Avance por Área (SLA a la fecha)
                     </h2>
                     <div class="space-y-5" id="area-stats">
                         <!-- Llenado dinámicamente -->
@@ -209,11 +214,99 @@
         let chartInstance = null;
         let riskChartInstance = null;
 
-        document.addEventListener('DOMContentLoaded', () => {
+        // ===================== CONFIGURACIÓN SUPABASE =====================
+        const SUPABASE_URL = 'https://xnlqyxxyryqyziksmajn.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhubHF5eHh5cnlxeXppa3NtYWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NzQxODEsImV4cCI6MjA5NzQ1MDE4MX0.uKhq16RBJSoEKLdjD04DTrHnBOg9IxU2cpREQfSf8S4';
+        const DASHBOARD_ID = 'dcsm-main';
+        // Modo vista: si el link lleva ?modo=vista, el dashboard es de SOLO LECTURA (para el cliente)
+        const VIEW_MODE = new URLSearchParams(location.search).get('modo') === 'vista';
+
+        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        let saveTimer = null;
+
+        function setSync(estado, texto) {
+            const dot = document.getElementById('syncDot');
+            const txt = document.getElementById('syncText');
+            if (!dot || !txt) return;
+            const colores = { ok: 'bg-emerald-400', saving: 'bg-amber-400 animate-alert', err: 'bg-rose-400', idle: 'bg-slate-300' };
+            dot.className = 'w-2 h-2 rounded-full ' + (colores[estado] || colores.idle);
+            txt.innerText = texto;
+        }
+
+        async function loadState() {
+            try {
+                setSync('saving', 'Cargando…');
+                const { data, error } = await sb
+                    .from('dashboards')
+                    .select('data')
+                    .eq('id', DASHBOARD_ID)
+                    .maybeSingle();
+                if (error) throw error;
+
+                if (data && data.data) {
+                    const saved = data.data;
+                    if (Array.isArray(saved.tasks)) {
+                        const execMap = {};
+                        saved.tasks.forEach(t => { execMap[t.id] = t.ejecutado; });
+                        state.tasks.forEach(t => { if (t.id in execMap) t.ejecutado = execMap[t.id]; });
+                    }
+                    if (typeof saved.currentWeek === 'number') {
+                        state.currentWeek = saved.currentWeek;
+                        const sl = document.getElementById('weekSlider');
+                        sl.value = saved.currentWeek;
+                        document.getElementById('currentWeekDisplay').innerText = 'S' + saved.currentWeek;
+                    }
+                    setSync('ok', VIEW_MODE ? 'Solo lectura' : 'Guardado');
+                } else {
+                    // No existe registro aún: guardamos el estado inicial como semilla
+                    await saveState(true);
+                }
+            } catch (e) {
+                console.error('Supabase load error:', e);
+                setSync('err', 'Sin conexión (local)');
+            }
+        }
+
+        async function saveState(inmediato = false) {
+            if (VIEW_MODE) return; // el cliente en modo vista nunca escribe
+            const payload = {
+                id: DASHBOARD_ID,
+                data: {
+                    currentWeek: state.currentWeek,
+                    tasks: state.tasks.map(t => ({ id: t.id, ejecutado: t.ejecutado }))
+                },
+                updated_at: new Date().toISOString()
+            };
+            const ejecutar = async () => {
+                setSync('saving', 'Guardando…');
+                try {
+                    const { error } = await sb.from('dashboards').upsert(payload, { onConflict: 'id' });
+                    if (error) throw error;
+                    setSync('ok', 'Guardado');
+                } catch (e) {
+                    console.error('Supabase save error:', e);
+                    setSync('err', 'Error al guardar');
+                }
+            };
+            if (inmediato) return ejecutar();
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(ejecutar, 600); // agrupa cambios rápidos
+        }
+        // ==================================================================
+
+        document.addEventListener('DOMContentLoaded', async () => {
             initData();
             initUI();
+            await loadState();   // sobrescribe el estado con lo guardado en Supabase
             updateAll();
+            if (VIEW_MODE) aplicarModoVista();
         });
+
+        function aplicarModoVista() {
+            // Oculta el botón de auto-completar (acción de edición)
+            const btn = document.querySelector('button[onclick="marcarAnterioresEjecutadas()"]');
+            if (btn) btn.style.display = 'none';
+        }
 
         function initData() {
             // Expand shortened keys
@@ -255,22 +348,27 @@
                 state.currentWeek = parseInt(e.target.value);
                 document.getElementById('currentWeekDisplay').innerText = `S${state.currentWeek}`;
                 updateAll();
+                if (!VIEW_MODE) saveState();
             });
         }
 
         function toggleTask(taskId) {
+            if (VIEW_MODE) return;
             const t = state.tasks.find(t => t.id === taskId);
             if(t) {
                 t.ejecutado = !t.ejecutado;
                 updateAll();
+                saveState();
             }
         }
 
         function marcarAnterioresEjecutadas() {
+            if (VIEW_MODE) return;
             state.tasks.forEach(t => {
                 if(t.Semana_Num <= state.currentWeek) t.ejecutado = true;
             });
             updateAll();
+            saveState();
         }
 
         function updateAll() {
@@ -311,12 +409,12 @@
         }
 
         function renderAreaStats() {
-            const count = { Clima: {totalAnual:0, real:0}, Energía: {totalAnual:0, real:0}, SSGG: {totalAnual:0, real:0} };
+            const count = { Clima: {prog:0, real:0}, Energía: {prog:0, real:0}, SSGG: {prog:0, real:0} };
             
             state.tasks.forEach(t => {
                 let area = getAreaName(t.Sistema);
-                if(count[area] !== undefined) {
-                    count[area].totalAnual += t.Programado;
+                if(count[area] !== undefined && t.Semana_Num <= state.currentWeek) {
+                    count[area].prog += t.Programado;
                     if(t.ejecutado) count[area].real += t.Programado;
                 }
             });
@@ -330,7 +428,7 @@
 
             for(let area in count) {
                 let c = count[area];
-                let pct = c.totalAnual === 0 ? 0 : Math.round((c.real / c.totalAnual) * 100);
+                let pct = c.prog === 0 ? 100 : Math.round((c.real / c.prog) * 100);
                 let col = conf[area].color;
                 let ic = conf[area].icon;
                 
@@ -340,7 +438,7 @@
                             <span class="text-xs font-bold text-gray-700 uppercase flex items-center gap-1">
                                 <i class="fas fa-${ic} text-${col}-500 w-4"></i> ${area}
                             </span>
-                            <span class="text-xs font-black text-${col}-600">${c.real}/${c.totalAnual} (${pct}%)</span>
+                            <span class="text-xs font-black text-${col}-600">${c.real}/${c.prog} (${pct}%)</span>
                         </div>
                         <div class="w-full bg-gray-200 rounded-full h-2">
                             <div class="bg-${col}-500 h-2 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
@@ -400,7 +498,7 @@
                     <td class="px-5 py-3 text-center font-black text-blue-700">${t.Programado}</td>
                     <td class="px-5 py-3 text-center">
                         <div class="relative inline-block w-12 align-middle select-none transition duration-200 ease-in">
-                            <input type="checkbox" id="toggle-${t.id}" ${t.ejecutado ? 'checked' : ''} onclick="toggleTask(${t.id})" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
+                            <input type="checkbox" id="toggle-${t.id}" ${t.ejecutado ? 'checked' : ''} ${VIEW_MODE ? 'disabled' : `onclick="toggleTask(${t.id})"`} class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer ${VIEW_MODE ? 'opacity-60 cursor-not-allowed' : ''}"/>
                             <label for="toggle-${t.id}" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
                         </div>
                     </td>
