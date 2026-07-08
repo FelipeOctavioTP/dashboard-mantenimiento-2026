@@ -1,798 +1,801 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control Anual de Mantenimiento DCSM - V0.13 (Persistente)</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; }
-        .slider-thumb::-webkit-slider-thumb {
-            appearance: none; width: 24px; height: 24px; background: #2563eb; cursor: pointer; border-radius: 50%; border: 4px solid white; box-shadow: 0 0 10px rgba(37,99,235,0.4);
-        }
-        .toggle-checkbox:checked { right: 0; border-color: #10B981; }
-        .toggle-checkbox:checked + .toggle-label { background-color: #10B981; }
-        .toggle-checkbox { right: 0; z-index: 1; border-color: #E5E7EB; transition: all 0.3s; }
-        .toggle-label { width: 3rem; height: 1.5rem; background-color: #E5E7EB; border-radius: 9999px; transition: all 0.3s; }
-        @keyframes custom-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-        .animate-alert { animation: custom-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-        .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
-        .scrollbar-thin::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reserva de Salas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --bg: #0B1220;
+    --panel: #131C30;
+    --panel-2: #0F1729;
+    --border: #22304A;
+    --text: #E7ECF5;
+    --text-muted: #8695AD;
+    --free: #22C55E;
+    --free-dim: #14532D;
+    --busy: #EF4444;
+    --busy-dim: #4C1D1D;
+    --select: #38BDF8;
+    --select-dim: #0C4A6E;
+    --amber: #F59E0B;
+    --radius: 10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background: radial-gradient(1200px 600px at 50% -10%, #172038 0%, var(--bg) 60%);
+    color: var(--text);
+    font-family:'Inter', sans-serif;
+    min-height:100vh;
+    padding: 20px 14px 60px;
+  }
+  .app{ max-width: 640px; margin: 0 auto; }
+
+  /* --- Header: door-panel signature element --- */
+  .door-panel{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 22px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .door-panel::before{
+    content:"";
+    position:absolute; inset:0;
+    background: linear-gradient(180deg, rgba(56,189,248,0.06), transparent 40%);
+    pointer-events:none;
+  }
+  .eyebrow{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+  .room-name{
+    font-family:'Space Grotesk', sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    margin: 4px 0 16px;
+  }
+  .room-tabs{
+    display:flex; gap:8px; margin-bottom:16px;
+  }
+  .room-tab{
+    flex:1; padding: 9px 10px; border-radius: 8px; border:1px solid var(--border);
+    background: var(--panel-2); color: var(--text-muted); font-size:13px;
+    font-family:'Inter',sans-serif; font-weight:600; cursor:pointer; text-align:center;
+  }
+  .room-tab.active{
+    border-color: var(--select); color:#fff; background: var(--select-dim);
+  }
+  .status-row{
+    display:flex; align-items:center; gap:12px;
+    padding: 14px 16px;
+    border-radius: var(--radius);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+  }
+  .dot{
+    width: 14px; height:14px; border-radius:50%;
+    background: var(--text-muted);
+    box-shadow: 0 0 0 4px rgba(255,255,255,0.03);
+    flex-shrink:0;
+    transition: background .2s;
+  }
+  .dot.free{ background: var(--free); box-shadow: 0 0 14px 2px rgba(34,197,94,0.55);}
+  .dot.busy{ background: var(--busy); box-shadow: 0 0 14px 2px rgba(239,68,68,0.55);}
+  .status-text{ font-weight:600; font-size:15px; }
+  .status-sub{ font-size:12.5px; color:var(--text-muted); margin-top:2px; }
+
+  /* --- Date nav --- */
+  .date-nav{
+    display:flex; align-items:center; gap:8px;
+    margin: 16px 0 10px;
+  }
+  .date-nav button{
+    width:38px; height:38px; border-radius:8px;
+    background: var(--panel); border:1px solid var(--border);
+    color: var(--text); font-size:16px; cursor:pointer;
+  }
+  .date-nav button:hover{ border-color: var(--select); }
+  .date-nav input[type=date]{
+    flex:1; background: var(--panel); border:1px solid var(--border);
+    color: var(--text); padding: 9px 10px; border-radius:8px;
+    font-family:'JetBrains Mono', monospace; font-size:14px;
+  }
+  .conn{
+    font-size:11px; font-family:'JetBrains Mono',monospace; color: var(--text-muted);
+    display:flex; align-items:center; gap:5px; padding: 0 6px; white-space:nowrap;
+  }
+  .conn .pip{ width:7px; height:7px; border-radius:50%; background:var(--text-muted); }
+  .conn.ok .pip{ background: var(--free); }
+  .conn.local .pip{ background: var(--amber); }
+
+  /* --- Grid panel --- */
+  .section-title{
+    font-family:'Space Grotesk', sans-serif;
+    font-size: 14px; font-weight:600; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing:0.06em;
+    margin: 22px 2px 10px;
+  }
+  .legend{
+    display:flex; gap:16px; font-size:12px; color:var(--text-muted); margin: 0 2px 10px;
+  }
+  .legend span{ display:flex; align-items:center; gap:6px; }
+  .legend i{ width:10px; height:10px; border-radius:3px; display:inline-block; }
+  .legend .i-free{ background: var(--free-dim); border:1px solid var(--free); }
+  .legend .i-busy{ background: var(--busy-dim); border:1px solid var(--busy); }
+  .legend .i-sel{ background: var(--select-dim); border:1px solid var(--select); }
+
+  .time-grid{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px;
+    display:grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    max-height: 340px;
+    overflow-y:auto;
+  }
+  .slot{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 13px;
+    text-align:center;
+    padding: 10px 4px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text-muted);
+    cursor:pointer;
+    user-select:none;
+    transition: transform .1s;
+  }
+  .slot:hover:not(.busy):not(.past){ transform: translateY(-1px); border-color: var(--select); }
+  .slot.free{ color: var(--free); border-color: rgba(34,197,94,0.35); }
+  .slot.busy{ color: var(--busy); background: var(--busy-dim); border-color: var(--busy); cursor:not-allowed; opacity:0.85; }
+  .slot.selected{ color:#fff; background: var(--select-dim); border-color: var(--select); font-weight:600; }
+  .slot.past{ opacity:0.35; cursor:not-allowed; }
+
+  /* --- Booking form --- */
+  .booking-form{
+    margin-top: 16px;
+    background: var(--panel);
+    border: 1px solid var(--select);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .booking-form .range{
+    font-family:'JetBrains Mono', monospace;
+    color: var(--select);
+    font-size: 14px;
+    margin-bottom: 12px;
+  }
+  .field{ margin-bottom: 12px; }
+  .field label{ display:block; font-size:12px; color:var(--text-muted); margin-bottom:5px; }
+  .field input, .field textarea{
+    width:100%; background: var(--panel-2); border:1px solid var(--border);
+    color: var(--text); padding: 10px; border-radius:8px; font-family:'Inter',sans-serif; font-size:14px;
+    resize: vertical;
+  }
+  .form-actions{ display:flex; gap:10px; margin-top:14px; }
+  .btn{
+    flex:1; padding: 11px; border-radius: 8px; border:none; cursor:pointer;
+    font-weight:600; font-size:14px; font-family:'Inter',sans-serif;
+  }
+  .btn-primary{ background: var(--select); color:#04141F; }
+  .btn-primary:hover{ filter:brightness(1.08); }
+  .btn-ghost{ background: transparent; border:1px solid var(--border); color: var(--text-muted); }
+  .btn-ghost:hover{ border-color: var(--text-muted); color: var(--text); }
+  .error-msg{ color: var(--busy); font-size:13px; margin-top:8px; }
+
+  /* --- Reservations list --- */
+  .res-item{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    margin-bottom: 8px;
+    gap: 10px;
+  }
+  .res-item .hora{
+    font-family:'JetBrains Mono', monospace; color: var(--select); font-weight:600; font-size:13px;
+  }
+  .res-item .motivo{ font-size:14px; margin-top:3px; }
+  .res-item .responsable{ font-size:12px; color: var(--text-muted); margin-top:2px; }
+  .res-item .del{
+    background: none; border:1px solid var(--border); color: var(--text-muted);
+    border-radius:6px; width:30px; height:30px; cursor:pointer; flex-shrink:0;
+  }
+  .res-item .del:hover{ border-color: var(--busy); color: var(--busy); }
+  .empty-msg{ color: var(--text-muted); font-size:13px; padding: 10px 2px; }
+
+  .res-item-wrap{ margin-bottom: 8px; }
+  .cancel-inline{
+    background: var(--panel-2);
+    border: 1px solid var(--busy);
+    border-top: none;
+    border-radius: 0 0 var(--radius) var(--radius);
+    padding: 12px 14px;
+    margin-top: -8px;
+  }
+  .cancel-inline .field{ margin-bottom: 8px; }
+  .cancel-inline label{ display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:4px; }
+  .cancel-inline input{
+    width:100%; background: var(--panel); border:1px solid var(--border);
+    color: var(--text); padding: 8px 10px; border-radius:7px; font-size:13.5px; font-family:'Inter',sans-serif;
+  }
+  .cancel-inline .actions{ display:flex; gap:8px; margin-top:10px; }
+  .cancel-inline .btn{ padding: 8px; font-size:13px; }
+  .cancel-inline .err{ color: var(--busy); font-size:12px; margin-top:6px; }
+
+  /* --- QR panel --- */
+  .qr-toggle{
+    width:100%; margin-top:22px; padding:12px; border-radius: var(--radius);
+    background: var(--panel); border:1px dashed var(--border); color: var(--text-muted);
+    cursor:pointer; font-size:13px; font-family:'JetBrains Mono',monospace;
+  }
+  .qr-toggle:hover{ border-color: var(--select); color: var(--text); }
+  .qr-box{
+    margin-top:12px; background:#fff; border-radius: var(--radius);
+    padding: 20px; text-align:center;
+  }
+  .qr-box #qrcode{ display:flex; justify-content:center; }
+  .qr-box p{ color:#0B1220; font-family:'Space Grotesk',sans-serif; font-weight:600; margin: 12px 0 4px; }
+  .qr-box small{ color:#556; }
+  .qr-print-btn{
+    margin-top:10px; padding:8px 16px; border-radius:6px; border:1px solid #0B1220;
+    background:#0B1220; color:#fff; cursor:pointer; font-size:12px;
+  }
+
+  @media print{
+    body *{ visibility:hidden; }
+    .qr-box, .qr-box *{ visibility:visible; }
+    .qr-box{ position:fixed; top:0; left:0; width:100%; }
+  }
+
+  ::-webkit-scrollbar{ width:6px; }
+  ::-webkit-scrollbar-thumb{ background: var(--border); border-radius:3px; }
+</style>
 </head>
-<body class="p-4 md:p-8 text-gray-800">
+<body>
+<div class="app">
 
-    <!-- ================= VENTANA DE INGRESO ================= -->
-    <div id="loginModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
-        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 border border-slate-200">
-            <div class="text-center mb-6">
-                <div class="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-700 to-indigo-800 text-white flex items-center justify-center text-2xl mb-3">
-                    <i class="fas fa-server"></i>
-                </div>
-                <h2 class="text-2xl font-black text-slate-800">Control Anual de Mantenimiento DCSM</h2>
-                <p class="text-sm text-slate-500 mt-1">Selecciona tu modo de ingreso</p>
-            </div>
-
-            <!-- Selección de modo -->
-            <div id="loginChoice" class="space-y-3">
-                <button onclick="iniciarDashboard(false)" class="w-full flex items-center gap-4 px-5 py-4 rounded-xl border-2 border-slate-200 hover:border-blue-500 hover:bg-blue-50 transition text-left">
-                    <i class="fas fa-eye text-blue-600 text-xl w-6 text-center"></i>
-                    <span><span class="block font-bold text-slate-800">Modo Lectura</span><span class="block text-xs text-slate-500">Solo visualización, sin editar</span></span>
-                </button>
-                <button onclick="mostrarPinAdmin()" class="w-full flex items-center gap-4 px-5 py-4 rounded-xl border-2 border-slate-200 hover:border-blue-500 hover:bg-blue-50 transition text-left">
-                    <i class="fas fa-user-shield text-blue-600 text-xl w-6 text-center"></i>
-                    <span><span class="block font-bold text-slate-800">Modo Administrador</span><span class="block text-xs text-slate-500">Editar tareas y guardar cambios</span></span>
-                </button>
-            </div>
-
-            <!-- Ingreso de clave -->
-            <div id="loginPin" class="hidden space-y-3">
-                <label class="block text-sm font-bold text-slate-700">Clave de administrador</label>
-                <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="••••" class="w-full text-center text-2xl tracking-[0.5em] font-black border-2 border-slate-200 rounded-xl py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
-                <p id="pinError" class="hidden text-sm text-rose-600 font-semibold"></p>
-                <div class="flex gap-2 pt-1">
-                    <button onclick="volverChoice()" class="flex-1 px-4 py-3 rounded-xl border-2 border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition">Volver</button>
-                    <button id="pinSubmit" onclick="validarPin()" class="flex-1 px-4 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition">Ingresar</button>
-                </div>
-            </div>
-        </div>
+  <div class="door-panel">
+    <span class="eyebrow">RESERVA DE SALA</span>
+    <div class="room-name" id="roomName">Sala de Reuniones</div>
+    <div class="room-tabs" id="roomTabs"></div>
+    <div class="status-row">
+      <span class="dot" id="statusDot"></span>
+      <div>
+        <div class="status-text" id="statusText">Cargando estado…</div>
+        <div class="status-sub" id="statusSub"></div>
+      </div>
     </div>
-    <!-- ====================================================== -->
+  </div>
 
-    <div class="max-w-7xl mx-auto space-y-6">
-        
-        <!-- HEADER PRINCIPAL -->
-        <div class="bg-gradient-to-r from-blue-700 to-indigo-800 p-8 rounded-2xl shadow-xl text-white flex flex-col md:flex-row justify-between items-center gap-4">
-            <div>
-                <h1 class="text-4xl font-black tracking-tight">Control Anual de Mantenimiento DCSM</h1>
-            </div>
-            <div class="bg-white/10 backdrop-blur-md p-4 rounded-2xl text-right border border-white/20 min-w-[200px]">
-                <p class="text-xs text-blue-200 font-semibold uppercase">Total Planificado 2026</p>
-                <p class="text-3xl font-black text-white" id="total-anual-assets">0 activos</p>
-                <div id="syncStatus" class="mt-2 inline-flex items-center gap-2 text-xs font-bold px-3 py-1 rounded-full bg-white/15 border border-white/20">
-                    <span id="syncDot" class="w-2 h-2 rounded-full bg-slate-300"></span>
-                    <span id="syncText">Conectando…</span>
-                </div>
-                <button id="btnGuardar" onclick="guardarCambios()" disabled class="mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-white/30 text-white/80 cursor-default transition">
-                    <i class="fas fa-check"></i> Sin cambios pendientes
-                </button>
-            </div>
-        </div>
+  <div class="date-nav">
+    <button id="prevDay" title="Día anterior">‹</button>
+    <input type="date" id="datePicker">
+    <button id="nextDay" title="Día siguiente">›</button>
+    <span class="conn" id="connIndicator"><span class="pip"></span><span id="connText">—</span></span>
+  </div>
 
-        <!-- KPIs PRINCIPALES -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="bg-white p-6 rounded-2xl shadow-md border-t-4 border-emerald-500 transition hover:shadow-lg">
-                <div class="flex justify-between items-center">
-                    <h3 class="text-gray-500 font-bold text-xs uppercase tracking-wider">Ejecutados vs Programados a la fecha</h3>
-                    <div class="bg-emerald-100 p-2 rounded-lg text-emerald-600"><i class="fas fa-bullseye"></i></div>
-                </div>
-                <p class="text-4xl font-black text-gray-900 mt-4" id="kpi-adherencia">0%</p>
-                <p class="text-xs text-gray-400 mt-2">Cumplimiento real vs planificado a hoy</p>
-            </div>
-            
-            <div class="bg-white p-6 rounded-2xl shadow-md border-t-4 border-blue-500 transition hover:shadow-lg">
-                <div class="flex justify-between items-center">
-                    <h3 class="text-gray-500 font-bold text-xs uppercase tracking-wider">Avance Anual Global</h3>
-                    <div class="bg-blue-100 p-2 rounded-lg text-blue-600"><i class="fas fa-chart-pie"></i></div>
-                </div>
-                <p class="text-4xl font-black text-gray-900 mt-4" id="kpi-avance">0%</p>
-                <p class="text-xs text-gray-400 mt-2">Progreso sobre la meta anual completa</p>
-            </div>
+  <div class="section-title">Horarios</div>
+  <div class="legend">
+    <span><i class="i-free"></i>Libre</span>
+    <span><i class="i-busy"></i>Ocupado</span>
+    <span><i class="i-sel"></i>Seleccionado</span>
+  </div>
+  <div class="time-grid" id="timeGrid"></div>
 
-            <div class="bg-white p-6 rounded-2xl shadow-md border-t-4 border-rose-500 transition hover:shadow-lg">
-                <div class="flex justify-between items-center">
-                    <h3 class="text-gray-500 font-bold text-xs uppercase tracking-wider">Activos en Atraso</h3>
-                    <div class="bg-rose-100 p-2 rounded-lg text-rose-600"><i class="fas fa-exclamation-triangle"></i></div>
-                </div>
-                <p class="text-4xl font-black text-rose-600 mt-4" id="kpi-atrasos">0</p>
-                <p class="text-xs text-gray-400 mt-2">Mantenimientos vencidos (pasado sin ejecutar)</p>
-            </div>
-        </div>
-
-        <!-- ZONA DE GRÁFICOS Y PANELES LATERALES -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            <!-- Curva de Trabajo -->
-            <div class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-md border border-gray-100 flex flex-col">
-                <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                    <i class="fas fa-chart-bar text-blue-600"></i> Avance plan de mantenimiento
-                </h2>
-                <div class="relative w-full h-[400px] flex-grow">
-                    <canvas id="mainChart"></canvas>
-                </div>
-            </div>
-
-            <!-- Paneles Apilados: Riesgo y Especialidad -->
-            <div class="flex flex-col gap-6">
-                <!-- Panel de Riesgo -->
-                <div class="bg-white p-5 rounded-2xl shadow-md border border-gray-100 flex-1">
-                    <h2 class="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2">
-                        <i class="fas fa-shield-alt text-blue-600"></i> Avance actividades Tipo:
-                    </h2>
-                    <div class="relative w-full h-[140px] mb-2">
-                        <canvas id="riskChart"></canvas>
-                    </div>
-                    <div class="space-y-2" id="risk-stats">
-                        <!-- Llenado dinámicamente -->
-                    </div>
-                </div>
-
-                <!-- NUEVO: Panel de Especialidad (Áreas) -->
-                <div class="bg-white p-5 rounded-2xl shadow-md border border-gray-100 flex-1">
-                    <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                        <i class="fas fa-industry text-blue-600"></i> Avance por Área (sobre plan anual)
-                    </h2>
-                    <div class="space-y-5" id="area-stats">
-                        <!-- Llenado dinámicamente -->
-                    </div>
-                </div>
-            </div>
-
-        </div>
-
-        <!-- GRÁFICO: ACTIVIDADES TIPO A/B/C — AVANCE A LA FECHA -->
-        <div class="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    <i class="fas fa-layer-group text-blue-600"></i> Actividades ejecutadas por Tipo (avance a la fecha)
-                </h2>
-                <div class="inline-flex rounded-xl border border-gray-200 overflow-hidden text-xs font-bold">
-                    <button id="btnTipoMes" onclick="setTipoChartMode('mes')" class="px-4 py-2 bg-blue-600 text-white transition">Por Mes</button>
-                    <button id="btnTipoSemana" onclick="setTipoChartMode('semana')" class="px-4 py-2 bg-white text-gray-600 hover:bg-gray-50 transition">Por Semana</button>
-                </div>
-            </div>
-            <div class="relative w-full h-[360px]">
-                <canvas id="tipoChart"></canvas>
-            </div>
-            <p class="text-xs text-gray-400 mt-2" id="tipoChartCaption">Actividades ejecutadas hasta la semana actual, por criticidad (A crítico · B medio · C rutina).</p>
-        </div>
-
-        <!-- CONTROL DE TIEMPO / SLIDER -->
-        <div class="bg-white p-6 rounded-2xl shadow-md border border-blue-100 bg-blue-50/30 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-            <div class="flex-1 w-full">
-                <div class="flex justify-between items-center mb-2">
-                    <label class="text-sm font-bold text-gray-700 flex items-center gap-2">
-                        <i class="fas fa-clock text-blue-600"></i> Control de Tiempo (Progreso del Año)
-                    </label>
-                    <span class="bg-blue-600 text-white font-black px-5 py-1 rounded-full text-lg shadow-md border-2 border-white">
-                        Semana Actual: <span id="currentWeekDisplay">S25</span>
-                    </span>
-                </div>
-                <div class="flex items-center gap-4 py-2">
-                    <span class="text-xs font-bold text-gray-400">S1</span>
-                    <input type="range" id="weekSlider" min="1" max="52" value="25" class="w-full h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb shadow-inner">
-                    <span class="text-xs font-bold text-gray-400">S52</span>
-                </div>
-            </div>
-            <div class="w-full lg:w-auto">
-                <button onclick="marcarAnterioresEjecutadas()" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-4 rounded-xl font-bold shadow-lg transition transform active:scale-95 flex items-center justify-center gap-2">
-                    <i class="fas fa-check-double"></i> Auto-completar hasta hoy
-                </button>
-            </div>
-        </div>
-
-        <!-- TABLA DE GESTIÓN DE ACTIVIDADES -->
-        <div class="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
-            <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 pb-4 border-b border-gray-100 gap-4">
-                <div>
-                    <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                        <i class="fas fa-list-check text-blue-600"></i> Desglose y Control de Tareas
-                    </h2>
-                    <p class="text-xs text-gray-400 mt-1 uppercase tracking-widest font-semibold">Filtros por columna</p>
-                </div>
-                
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 w-full xl:w-auto">
-                    <select id="filtroEstado" class="bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" onchange="renderTable()">
-                        <option value="ALL">🔍 ESTADO: Todos</option>
-                        <option value="ATRASADO">🔴 Solo Atrasados</option>
-                        <option value="PENDIENTE">⚪ Solo Futuros</option>
-                        <option value="EJECUTADO">🟢 Solo Ejecutados</option>
-                    </select>
-
-                    <select id="filtroSemana" class="bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" onchange="renderTable()">
-                        <option value="ALL">📅 SEMANA: Todas</option>
-                    </select>
-                    
-                    <select id="filtroSistema" class="bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" onchange="renderTable()">
-                        <option value="ALL">⚙️ SISTEMA: Todos</option>
-                    </select>
-
-                    <select id="filtroEquipo" class="bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" onchange="renderTable()">
-                        <option value="ALL">🖥️ EQUIPO: Todos</option>
-                    </select>
-
-                    <select id="filtroActividad" class="bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" onchange="renderTable()">
-                        <option value="ALL">🛠️ ACTIVIDAD: Todas</option>
-                    </select>
-
-                    <select id="filtroTipo" class="bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" onchange="renderTable()">
-                        <option value="ALL">⚠️ TIPO: Todos</option>
-                        <option value="A">Tipo A (Crítico)</option>
-                        <option value="B">Tipo B (Medio)</option>
-                        <option value="C">Tipo C (Rutina)</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div class="overflow-x-auto max-h-[500px] border border-gray-100 rounded-xl shadow-inner scrollbar-thin">
-                <table class="min-w-full text-xs text-left">
-                    <thead class="text-gray-600 bg-gray-50 uppercase font-black sticky top-0 border-b border-gray-200 shadow-sm z-10">
-                        <tr>
-                            <th class="px-5 py-4">Estado</th>
-                            <th class="px-5 py-4 text-center">Tipo</th>
-                            <th class="px-5 py-4 text-center">Semana</th>
-                            <th class="px-5 py-4">Sistema</th>
-                            <th class="px-5 py-4">Equipo / Componente</th>
-                            <th class="px-5 py-4">Actividad</th>
-                            <th class="px-5 py-4 text-center">Cant. Activos</th>
-                            <th class="px-5 py-4 text-center">Ejecutado</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tableBody" class="divide-y divide-gray-100">
-                        <!-- Renderizado por JS -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
+  <div class="booking-form" id="bookingForm" hidden>
+    <div class="range" id="rangeLabel"></div>
+    <div class="field">
+      <label for="respInput">Reservado por</label>
+      <input type="text" id="respInput" placeholder="Tu nombre">
     </div>
+    <div class="field">
+      <label for="emailInput">Correo (para poder cancelar la reserva después)</label>
+      <input type="email" id="emailInput" placeholder="tu.correo@empresa.com">
+    </div>
+    <div class="field">
+      <label for="motivoInput">Motivo</label>
+      <textarea id="motivoInput" rows="2" placeholder="Ej: Reunión semanal de mantenimiento"></textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" id="cancelSel">Cancelar</button>
+      <button class="btn btn-primary" id="confirmRes">Confirmar reserva</button>
+    </div>
+    <div class="error-msg" id="formError" hidden></div>
+  </div>
 
-    <!-- Data Dinámica Inyectada -->
-    <script id="rawDataScript">
-        const rawData = [{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 1","a":"Preventivo","w":"S2","t":"C","p":4.0,"sn":2,"i":1},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 2","a":"Preventivo","w":"S2","t":"C","p":4.0,"sn":2,"i":2},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 3","a":"Preventivo","w":"S2","t":"C","p":4.0,"sn":2,"i":3},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 4","a":"Preventivo","w":"S2","t":"C","p":9.0,"sn":2,"i":4},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Pruebas","w":"S2","t":"B","p":7.0,"sn":2,"i":5},{"s":"[52] Infraestructura / Edificio","e":"Servicios de control de plagas","a":"Preventivo","w":"S2","t":"C","p":1.0,"sn":2,"i":6},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Banda Ancha","a":"Preventivo","w":"S3","t":"C","p":1.0,"sn":3,"i":7},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Energía -2","a":"Preventivo","w":"S3","t":"C","p":2.0,"sn":3,"i":8},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala NOC","a":"Preventivo","w":"S3","t":"C","p":3.0,"sn":3,"i":9},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 5","a":"Preventivo","w":"S3","t":"C","p":4.0,"sn":3,"i":10},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 6","a":"Preventivo","w":"S3","t":"C","p":6.0,"sn":3,"i":11},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala UPS RESO","a":"Preventivo","w":"S3","t":"C","p":2.0,"sn":3,"i":12},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS SM48","a":"Medición","w":"S3","t":"C","p":2.0,"sn":3,"i":13},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 1","a":"Medición","w":"S3","t":"C","p":2.0,"sn":3,"i":14},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 2 - 3","a":"Medición","w":"S3","t":"C","p":4.0,"sn":3,"i":15},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 4","a":"Medición","w":"S3","t":"C","p":2.0,"sn":3,"i":16},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala CPD","a":"Preventivo","w":"S4","t":"C","p":8.0,"sn":4,"i":17},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Comunicaciones","a":"Preventivo","w":"S4","t":"C","p":2.0,"sn":4,"i":18},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Midrange","a":"Preventivo","w":"S4","t":"C","p":3.0,"sn":4,"i":19},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala RESO","a":"Preventivo","w":"S4","t":"C","p":18.0,"sn":4,"i":20},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 5","a":"Medición","w":"S4","t":"C","p":5.0,"sn":4,"i":21},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 6","a":"Medición","w":"S4","t":"C","p":3.0,"sn":4,"i":22},{"s":"[08] Sistema Eléctrico","e":"Medición tableros cargas finales (RED;TE;TI)","a":"Mediciones","w":"S4","t":"A","p":1.0,"sn":4,"i":23},{"s":"[08] Sistema Eléctrico","e":"Sistema rectificador EATON 1","a":"Preventivo","w":"S4","t":"B","p":1.0,"sn":4,"i":24},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Housing","a":"Preventivo","w":"S5","t":"C","p":1.0,"sn":5,"i":25},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala PPAL9","a":"Preventivo","w":"S5","t":"C","p":4.0,"sn":5,"i":26},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala PSSBA","a":"Preventivo","w":"S5","t":"C","p":4.0,"sn":5,"i":27},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Prepago/GSM","a":"Preventivo","w":"S5","t":"C","p":5.0,"sn":5,"i":28},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala SDH","a":"Preventivo","w":"S5","t":"C","p":6.0,"sn":5,"i":29},{"s":"[03] Clima Sala Técnica","e":"Sistemas Chiller","a":"Preventivo","w":"S5","t":"B","p":3.0,"sn":5,"i":30},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS CPD","a":"Medición","w":"S5","t":"C","p":7.0,"sn":5,"i":31},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS RESO","a":"Medición","w":"S5","t":"C","p":5.0,"sn":5,"i":32},{"s":"[08] Sistema Eléctrico","e":"Sistema rectificador EATON 2","a":"Preventivo","w":"S5","t":"B","p":1.0,"sn":5,"i":33},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Alcatel","a":"Preventivo","w":"S6","t":"C","p":2.0,"sn":6,"i":34},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Conmutación","a":"Preventivo","w":"S6","t":"C","p":3.0,"sn":6,"i":35},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Crossconect","a":"Preventivo","w":"S6","t":"C","p":1.0,"sn":6,"i":36},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Datos","a":"Preventivo","w":"S6","t":"C","p":3.0,"sn":6,"i":37},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Nokia","a":"Preventivo","w":"S6","t":"C","p":2.0,"sn":6,"i":38},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TX","a":"Preventivo","w":"S6","t":"C","p":3.0,"sn":6,"i":39},{"s":"[52] Infraestructura / Edificio","e":"Servicios de control de plagas","a":"Preventivo","w":"S6","t":"C","p":1.0,"sn":6,"i":40},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala CCI","a":"Preventivo","w":"S7","t":"C","p":2.0,"sn":7,"i":41},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Energía -1","a":"Preventivo","w":"S7","t":"C","p":9.0,"sn":7,"i":42},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Movil","a":"Preventivo","w":"S7","t":"C","p":2.0,"sn":7,"i":43},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Telxius","a":"Preventivo","w":"S7","t":"C","p":5.0,"sn":7,"i":44},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Inspección","w":"S7","t":"C","p":7.0,"sn":7,"i":45},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Pruebas","w":"S7","t":"B","p":7.0,"sn":7,"i":46},{"s":"[03] Clima Sala Técnica","e":"Sistemas Torres enfriamiento","a":"Preventivo","w":"S8","t":"C","p":6.0,"sn":8,"i":47},{"s":"[08] Sistema Eléctrico","e":"Medición tableros cargas finales (RED;TE;TI)","a":"Mediciones","w":"S8","t":"A","p":1.0,"sn":8,"i":48},{"s":"[08] Sistema Eléctrico","e":"Tableros SWB","a":"Preventivo","w":"S8","t":"C","p":11.0,"sn":8,"i":49},{"s":"[03] Clima Sala Técnica","e":"Sistemas Torres enfriamiento","a":"Preventivo","w":"S9","t":"C","p":3.0,"sn":9,"i":50},{"s":"[08] Sistema Eléctrico","e":"Tableros SWB","a":"Preventivo","w":"S9","t":"C","p":11.0,"sn":9,"i":51},{"s":"[52] Infraestructura / Edificio","e":"Servicios de control de plagas","a":"Preventivo","w":"S10","t":"C","p":1.0,"sn":10,"i":52},{"s":"[52] Infraestructura / Edificio","e":"Sistema de bombas AP Subterraneo 1","a":"Preventivo","w":"S10","t":"C","p":3.0,"sn":10,"i":53},{"s":"[52] Infraestructura / Edificio","e":"Sistema de bombas AP Subterraneo 2","a":"Preventivo","w":"S10","t":"C","p":3.0,"sn":10,"i":54},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 1","a":"Preventivo","w":"S11","t":"C","p":4.0,"sn":11,"i":55},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 2","a":"Preventivo","w":"S11","t":"C","p":4.0,"sn":11,"i":56},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 3","a":"Preventivo","w":"S11","t":"C","p":4.0,"sn":11,"i":57},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 4","a":"Preventivo","w":"S11","t":"C","p":9.0,"sn":11,"i":58},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Preventivo","w":"S11","t":"B","p":7.0,"sn":11,"i":59},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Pruebas","w":"S11","t":"B","p":7.0,"sn":11,"i":60},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Banda Ancha","a":"Preventivo","w":"S12","t":"C","p":1.0,"sn":12,"i":61},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Energía -2","a":"Preventivo","w":"S12","t":"C","p":2.0,"sn":12,"i":62},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala NOC","a":"Preventivo","w":"S12","t":"C","p":3.0,"sn":12,"i":63},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 5","a":"Preventivo","w":"S12","t":"C","p":4.0,"sn":12,"i":64},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 6","a":"Preventivo","w":"S12","t":"C","p":6.0,"sn":12,"i":65},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala UPS RESO","a":"Preventivo","w":"S12","t":"C","p":2.0,"sn":12,"i":66},{"s":"[03] Clima Sala Técnica","e":"Sistemas Chiller","a":"Preventivo","w":"S12","t":"B","p":3.0,"sn":12,"i":67},{"s":"[08] Sistema Eléctrico","e":"Medición tableros cargas finales (RED;TE;TI)","a":"Mediciones","w":"S12","t":"A","p":1.0,"sn":12,"i":68},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala CPD","a":"Preventivo","w":"S13","t":"C","p":8.0,"sn":13,"i":69},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Comunicaciones","a":"Preventivo","w":"S13","t":"C","p":2.0,"sn":13,"i":70},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Midrange","a":"Preventivo","w":"S13","t":"C","p":3.0,"sn":13,"i":71},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala RESO","a":"Preventivo","w":"S13","t":"C","p":18.0,"sn":13,"i":72},{"s":"[08] Sistema Eléctrico","e":"Tableros TCC","a":"Preventivo","w":"S13","t":"C","p":16.0,"sn":13,"i":73},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Housing","a":"Preventivo","w":"S14","t":"C","p":1.0,"sn":14,"i":74},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala PPAL9","a":"Preventivo","w":"S14","t":"C","p":4.0,"sn":14,"i":75},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala PSSBA","a":"Preventivo","w":"S14","t":"C","p":4.0,"sn":14,"i":76},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Prepago/GSM","a":"Preventivo","w":"S14","t":"C","p":5.0,"sn":14,"i":77},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala SDH","a":"Preventivo","w":"S14","t":"C","p":6.0,"sn":14,"i":78},{"s":"[52] Infraestructura / Edificio","e":"Aseo bajo piso salas tecnicas - Piso -1","a":"Preventivo","w":"S14","t":"B","p":1.0,"sn":14,"i":79},{"s":"[52] Infraestructura / Edificio","e":"Servicios de control de plagas","a":"Preventivo","w":"S14","t":"C","p":1.0,"sn":14,"i":80},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Conmutación","a":"Preventivo","w":"S15","t":"C","p":3.0,"sn":15,"i":81},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Crossconect","a":"Preventivo","w":"S15","t":"C","p":1.0,"sn":15,"i":82},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Datos","a":"Preventivo","w":"S15","t":"C","p":3.0,"sn":15,"i":83},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Nokia","a":"Preventivo","w":"S15","t":"C","p":2.0,"sn":15,"i":84},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Pruebas","w":"S15","t":"B","p":7.0,"sn":15,"i":85},{"s":"[08] Sistema Eléctrico","e":"Tableros TCC","a":"Preventivo","w":"S15","t":"C","p":16.0,"sn":15,"i":86},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala CCI","a":"Preventivo","w":"S16","t":"C","p":2.0,"sn":16,"i":87},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Energía -1","a":"Preventivo","w":"S16","t":"C","p":9.0,"sn":16,"i":88},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Movil","a":"Preventivo","w":"S16","t":"C","p":2.0,"sn":16,"i":89},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Telxius","a":"Preventivo","w":"S16","t":"C","p":5.0,"sn":16,"i":90},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS SM48","a":"Medición","w":"S16","t":"C","p":2.0,"sn":16,"i":91},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 1","a":"Medición","w":"S16","t":"C","p":2.0,"sn":16,"i":92},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 2 - 3","a":"Medición","w":"S16","t":"C","p":4.0,"sn":16,"i":93},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 4","a":"Medición","w":"S16","t":"C","p":2.0,"sn":16,"i":94},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS SM48","a":"Preventivo","w":"S16","t":"A","p":1.0,"sn":16,"i":95},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS TIC 1","a":"Preventivo","w":"S16","t":"A","p":1.0,"sn":16,"i":96},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS TIC 2 - 3","a":"Preventivo","w":"S16","t":"A","p":2.0,"sn":16,"i":97},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS TIC 4","a":"Preventivo","w":"S16","t":"A","p":1.0,"sn":16,"i":98},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 1","a":"Preventivo","w":"S17","t":"C","p":4.0,"sn":17,"i":99},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 2","a":"Preventivo","w":"S17","t":"C","p":4.0,"sn":17,"i":100},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 3","a":"Preventivo","w":"S17","t":"C","p":4.0,"sn":17,"i":101},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 4","a":"Preventivo","w":"S17","t":"C","p":9.0,"sn":17,"i":102},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 5","a":"Medición","w":"S17","t":"C","p":5.0,"sn":17,"i":103},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 6","a":"Medición","w":"S17","t":"C","p":3.0,"sn":17,"i":104},{"s":"[08] Sistema Eléctrico","e":"Medición tableros cargas finales (RED;TE;TI)","a":"Mediciones","w":"S17","t":"A","p":1.0,"sn":17,"i":105},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS TIC 5","a":"Preventivo","w":"S17","t":"A","p":3.0,"sn":17,"i":106},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS TIC 6","a":"Preventivo","w":"S17","t":"A","p":3.0,"sn":17,"i":107},{"s":"[08] Sistema Eléctrico","e":"Tableros TCC","a":"Preventivo","w":"S17","t":"C","p":16.0,"sn":17,"i":108},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Banda Ancha","a":"Preventivo","w":"S18","t":"C","p":1.0,"sn":18,"i":109},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Energía -2","a":"Preventivo","w":"S18","t":"C","p":2.0,"sn":18,"i":110},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala NOC","a":"Preventivo","w":"S18","t":"C","p":3.0,"sn":18,"i":111},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 5","a":"Preventivo","w":"S18","t":"C","p":4.0,"sn":18,"i":112},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 6","a":"Preventivo","w":"S18","t":"C","p":6.0,"sn":18,"i":113},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala UPS RESO","a":"Preventivo","w":"S18","t":"C","p":2.0,"sn":18,"i":114},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS CPD","a":"Medición","w":"S18","t":"C","p":7.0,"sn":18,"i":115},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS RESO","a":"Medición","w":"S18","t":"C","p":5.0,"sn":18,"i":116},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS CPD","a":"Preventivo","w":"S18","t":"A","p":3.0,"sn":18,"i":117},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS RESO","a":"Preventivo","w":"S18","t":"A","p":3.0,"sn":18,"i":118},{"s":"[52] Infraestructura / Edificio","e":"Aseo bajo piso salas tecnicas - Piso 1","a":"Preventivo","w":"S18","t":"B","p":3.0,"sn":18,"i":119},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala CPD","a":"Preventivo","w":"S19","t":"C","p":8.0,"sn":19,"i":120},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Comunicaciones","a":"Preventivo","w":"S19","t":"C","p":2.0,"sn":19,"i":121},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Midrange","a":"Preventivo","w":"S19","t":"C","p":3.0,"sn":19,"i":122},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala RESO","a":"Preventivo","w":"S19","t":"C","p":18.0,"sn":19,"i":123},{"s":"[08] Sistema Eléctrico","e":"Tableros TCC","a":"Preventivo","w":"S19","t":"C","p":16.0,"sn":19,"i":124},{"s":"[52] Infraestructura / Edificio","e":"Aseo bajo piso salas tecnicas - Piso 2","a":"Preventivo","w":"S19","t":"B","p":3.0,"sn":19,"i":125},{"s":"[52] Infraestructura / Edificio","e":"Servicios de control de plagas","a":"Preventivo","w":"S19","t":"C","p":1.0,"sn":19,"i":126},{"s":"[03] Clima Sala Técnica","e":"Sistemas Chiller","a":"Preventivo","w":"S20","t":"B","p":3.0,"sn":20,"i":127},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Pruebas","w":"S20","t":"B","p":7.0,"sn":20,"i":128},{"s":"[08] Sistema Eléctrico","e":"Tableros TCC","a":"Preventivo","w":"S20","t":"C","p":16.0,"sn":20,"i":129},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Housing","a":"Preventivo","w":"S21","t":"C","p":1.0,"sn":21,"i":130},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala PPAL9","a":"Preventivo","w":"S21","t":"C","p":4.0,"sn":21,"i":131},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala PSSBA","a":"Preventivo","w":"S21","t":"C","p":4.0,"sn":21,"i":132},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Prepago/GSM","a":"Preventivo","w":"S21","t":"C","p":5.0,"sn":21,"i":133},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala SDH","a":"Preventivo","w":"S21","t":"C","p":6.0,"sn":21,"i":134},{"s":"[08] Sistema Eléctrico","e":"Medición tableros cargas finales (RED;TE;TI)","a":"Mediciones","w":"S21","t":"A","p":1.0,"sn":21,"i":135},{"s":"[52] Infraestructura / Edificio","e":"Aseo bajo piso salas tecnicas - Piso 2","a":"Preventivo","w":"S21","t":"B","p":2.0,"sn":21,"i":136},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Conmutación","a":"Preventivo","w":"S22","t":"C","p":3.0,"sn":22,"i":137},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Crossconect","a":"Preventivo","w":"S22","t":"C","p":1.0,"sn":22,"i":138},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Datos","a":"Preventivo","w":"S22","t":"C","p":3.0,"sn":22,"i":139},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Nokia","a":"Preventivo","w":"S22","t":"C","p":2.0,"sn":22,"i":140},{"s":"[08] Sistema Eléctrico","e":"Tableros TCC","a":"Preventivo","w":"S22","t":"C","p":15.0,"sn":22,"i":141},{"s":"[52] Infraestructura / Edificio","e":"Aseo bajo piso salas tecnicas - Piso 2","a":"Preventivo","w":"S22","t":"B","p":1.0,"sn":22,"i":142},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Energía -2","a":"Preventivo","w":"S22","t":"C","p":3.0,"sn":22,"i":326},{"s":"[03] Clima Sala Técnica","e":"Sistemas Torres enfriamiento","a":"Preventivo","w":"S23","t":"C","p":6.0,"sn":23,"i":143},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. rectificador EATON 2","a":"Preventivo","w":"S23","t":"B","p":5.0,"sn":23,"i":144},{"s":"[08] Sistema Eléctrico","e":"Tableros TDU","a":"Preventivo","w":"S23","t":"C","p":15.0,"sn":23,"i":145},{"s":"[52] Infraestructura / Edificio","e":"Servicios de control de plagas","a":"Preventivo","w":"S23","t":"C","p":1.0,"sn":23,"i":146},{"s":"[03] Clima Sala Técnica","e":"Sistemas Torres enfriamiento","a":"Preventivo","w":"S24","t":"C","p":3.0,"sn":24,"i":147},{"s":"[03] Clima Sala Técnica","e":"Tableros TDC","a":"Preventivo","w":"S24","t":"C","p":3.0,"sn":24,"i":148},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. rectificador EATON 1","a":"Preventivo","w":"S24","t":"B","p":4.0,"sn":24,"i":149},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Pruebas","w":"S24","t":"B","p":7.0,"sn":24,"i":150},{"s":"[08] Sistema Eléctrico","e":"Tableros TDU","a":"Preventivo","w":"S24","t":"C","p":15.0,"sn":24,"i":151},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala CCI","a":"Preventivo","w":"S25","t":"C","p":2.0,"sn":25,"i":152},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Energía -1","a":"Preventivo","w":"S25","t":"C","p":9.0,"sn":25,"i":153},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Movil","a":"Preventivo","w":"S25","t":"C","p":2.0,"sn":25,"i":154},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Telxius","a":"Preventivo","w":"S25","t":"C","p":5.0,"sn":25,"i":155},{"s":"[03] Clima Sala Técnica","e":"Tableros TDC","a":"Preventivo","w":"S25","t":"C","p":2.0,"sn":25,"i":156},{"s":"[08] Sistema Eléctrico","e":"Medición tableros cargas finales (RED;TE;TI)","a":"Mediciones","w":"S25","t":"A","p":1.0,"sn":25,"i":158},{"s":"[08] Sistema Eléctrico","e":"Tableros TDU","a":"Preventivo","w":"S25","t":"C","p":15.0,"sn":25,"i":160},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 1","a":"Preventivo","w":"S26","t":"C","p":4.0,"sn":26,"i":161},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 2","a":"Preventivo","w":"S26","t":"C","p":4.0,"sn":26,"i":162},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 3","a":"Preventivo","w":"S26","t":"C","p":4.0,"sn":26,"i":163},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 4","a":"Preventivo","w":"S26","t":"C","p":9.0,"sn":26,"i":164},{"s":"[03] Clima Sala Técnica","e":"Tableros TDC","a":"Preventivo","w":"S26","t":"C","p":8.0,"sn":26,"i":165},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Banda Ancha","a":"Preventivo","w":"S27","t":"C","p":1.0,"sn":27,"i":168},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala NOC","a":"Preventivo","w":"S27","t":"C","p":3.0,"sn":27,"i":170},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 5","a":"Preventivo","w":"S27","t":"C","p":4.0,"sn":27,"i":171},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 6","a":"Preventivo","w":"S27","t":"C","p":6.0,"sn":27,"i":172},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala UPS RESO","a":"Preventivo","w":"S27","t":"C","p":2.0,"sn":27,"i":173},{"s":"[03] Clima Sala Técnica","e":"Tableros TDC","a":"Preventivo","w":"S27","t":"C","p":11.0,"sn":27,"i":174},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. Rectificador ELTEK","a":"Preventivo","w":"S27","t":"B","p":4.0,"sn":27,"i":175},{"s":"[08] Sistema Eléctrico","e":"Sistema rectificador ELTEK","a":"Preventivo","w":"S27","t":"B","p":1.0,"sn":27,"i":176},{"s":"[08] Sistema Eléctrico","e":"Tableros TDU","a":"Preventivo","w":"S27","t":"C","p":15.0,"sn":27,"i":177},{"s":"[52] Infraestructura / Edificio","e":"Servicios de control de plagas","a":"Preventivo","w":"S27","t":"C","p":1.0,"sn":27,"i":178},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala CPD","a":"Preventivo","w":"S28","t":"C","p":8.0,"sn":28,"i":179},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Comunicaciones","a":"Preventivo","w":"S28","t":"C","p":2.0,"sn":28,"i":180},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Midrange","a":"Preventivo","w":"S28","t":"C","p":3.0,"sn":28,"i":181},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala RESO","a":"Preventivo","w":"S28","t":"C","p":18.0,"sn":28,"i":182},{"s":"[03] Clima Sala Técnica","e":"Sistemas Chiller","a":"Preventivo","w":"S28","t":"B","p":3.0,"sn":28,"i":183},{"s":"[03] Clima Sala Técnica","e":"Tableros TDC","a":"Preventivo","w":"S28","t":"C","p":5.0,"sn":28,"i":184},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Pruebas","w":"S28","t":"B","p":7.0,"sn":28,"i":185},{"s":"[52] Infraestructura / Edificio","e":"Aseo bajo piso salas tecnicas - Piso 3","a":"Preventivo","w":"S28","t":"B","p":3.0,"sn":28,"i":186},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Housing","a":"Preventivo","w":"S29","t":"C","p":1.0,"sn":29,"i":187},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala PPAL9","a":"Preventivo","w":"S29","t":"C","p":4.0,"sn":29,"i":188},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala PSSBA","a":"Preventivo","w":"S29","t":"C","p":4.0,"sn":29,"i":189},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Prepago/GSM","a":"Preventivo","w":"S29","t":"C","p":5.0,"sn":29,"i":190},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala SDH","a":"Preventivo","w":"S29","t":"C","p":6.0,"sn":29,"i":191},{"s":"[03] Clima Sala Técnica","e":"Tableros TDC","a":"Preventivo","w":"S29","t":"C","p":7.0,"sn":29,"i":192},{"s":"[08] Sistema Eléctrico","e":"Tableros TDU","a":"Preventivo","w":"S29","t":"C","p":15.0,"sn":29,"i":193},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Alcatel","a":"Preventivo","w":"S30","t":"C","p":2.0,"sn":30,"i":194},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Conmutación","a":"Preventivo","w":"S30","t":"C","p":3.0,"sn":30,"i":195},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Crossconect","a":"Preventivo","w":"S30","t":"C","p":1.0,"sn":30,"i":196},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Datos","a":"Preventivo","w":"S30","t":"C","p":3.0,"sn":30,"i":197},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Nokia","a":"Preventivo","w":"S30","t":"C","p":2.0,"sn":30,"i":198},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TX","a":"Preventivo","w":"S30","t":"C","p":3.0,"sn":30,"i":199},{"s":"[03] Clima Sala Técnica","e":"Tableros TDC","a":"Preventivo","w":"S30","t":"C","p":10.0,"sn":30,"i":200},{"s":"[08] Sistema Eléctrico","e":"Medición tableros cargas finales (RED;TE;TI)","a":"Mediciones","w":"S30","t":"A","p":1.0,"sn":30,"i":201},{"s":"[08] Sistema Eléctrico","e":"Tableros TDU","a":"Preventivo","w":"S30","t":"C","p":15.0,"sn":30,"i":202},{"s":"[52] Infraestructura / Edificio","e":"Aseo bajo piso salas tecnicas - Piso 4","a":"Preventivo","w":"S30","t":"B","p":3.0,"sn":30,"i":203},{"s":"[08] Sistema Eléctrico","e":"Sistema rectificador HUAWEI 2","a":"Preventivo","w":"S30","t":"B","p":1.0,"sn":30,"i":323},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. rectificador HUAWEI 2","a":"Preventivo","w":"S30","t":"B","p":2.0,"sn":30,"i":325},{"s":"[03] Clima Sala Técnica","e":"Tableros TDC","a":"Preventivo","w":"S31","t":"C","p":10.0,"sn":31,"i":204},{"s":"[08] Sistema Eléctrico","e":"Tableros TDU","a":"Preventivo","w":"S31","t":"C","p":15.0,"sn":31,"i":205},{"s":"[52] Infraestructura / Edificio","e":"Aseo bajo piso salas tecnicas - Piso 4","a":"Preventivo","w":"S31","t":"B","p":3.0,"sn":31,"i":206},{"s":"[52] Infraestructura / Edificio","e":"Sistema de bombas AP Subterraneo 1","a":"Preventivo","w":"S31","t":"C","p":3.0,"sn":31,"i":207},{"s":"[52] Infraestructura / Edificio","e":"Sistema de bombas AP Subterraneo 2","a":"Preventivo","w":"S31","t":"C","p":3.0,"sn":31,"i":208},{"s":"[08] Sistema Eléctrico","e":"Sistema rectificador HUAWEI 1","a":"Preventivo","w":"S31","t":"B","p":1.0,"sn":31,"i":322},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. rectificador HUAWEI 1","a":"Preventivo","w":"S31","t":"B","p":2.0,"sn":31,"i":324},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala CCI","a":"Preventivo","w":"S32","t":"C","p":2.0,"sn":32,"i":209},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Energía -1","a":"Preventivo","w":"S32","t":"C","p":9.0,"sn":32,"i":210},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Movil","a":"Preventivo","w":"S32","t":"C","p":2.0,"sn":32,"i":211},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Telxius","a":"Preventivo","w":"S32","t":"C","p":5.0,"sn":32,"i":212},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS SM48","a":"Medición","w":"S32","t":"C","p":2.0,"sn":32,"i":213},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 1","a":"Medición","w":"S32","t":"C","p":2.0,"sn":32,"i":214},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 2 - 3","a":"Medición","w":"S32","t":"C","p":4.0,"sn":32,"i":215},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 4","a":"Medición","w":"S32","t":"C","p":2.0,"sn":32,"i":216},{"s":"[52] Infraestructura / Edificio","e":"Servicios de control de plagas","a":"Preventivo","w":"S32","t":"C","p":1.0,"sn":32,"i":217},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 1","a":"Preventivo","w":"S33","t":"C","p":4.0,"sn":33,"i":218},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 2","a":"Preventivo","w":"S33","t":"C","p":4.0,"sn":33,"i":219},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 3","a":"Preventivo","w":"S33","t":"C","p":4.0,"sn":33,"i":220},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 4","a":"Preventivo","w":"S33","t":"C","p":9.0,"sn":33,"i":221},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 5","a":"Medición","w":"S33","t":"C","p":5.0,"sn":33,"i":222},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 6","a":"Medición","w":"S33","t":"C","p":3.0,"sn":33,"i":223},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Inspección","w":"S33","t":"C","p":7.0,"sn":33,"i":224},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Pruebas","w":"S33","t":"B","p":7.0,"sn":33,"i":225},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Banda Ancha","a":"Preventivo","w":"S34","t":"C","p":1.0,"sn":34,"i":226},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala NOC","a":"Preventivo","w":"S34","t":"C","p":3.0,"sn":34,"i":228},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 5","a":"Preventivo","w":"S34","t":"C","p":4.0,"sn":34,"i":229},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 6","a":"Preventivo","w":"S34","t":"C","p":6.0,"sn":34,"i":230},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala UPS RESO","a":"Preventivo","w":"S34","t":"C","p":2.0,"sn":34,"i":231},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS CPD","a":"Medición","w":"S34","t":"C","p":7.0,"sn":34,"i":232},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS RESO","a":"Medición","w":"S34","t":"C","p":5.0,"sn":34,"i":233},{"s":"[08] Sistema Eléctrico","e":"Medición tableros cargas finales (RED;TE;TI)","a":"Mediciones","w":"S34","t":"A","p":1.0,"sn":34,"i":234},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala CPD","a":"Preventivo","w":"S35","t":"C","p":8.0,"sn":35,"i":235},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Comunicaciones","a":"Preventivo","w":"S35","t":"C","p":2.0,"sn":35,"i":236},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Midrange","a":"Preventivo","w":"S35","t":"C","p":3.0,"sn":35,"i":237},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala RESO","a":"Preventivo","w":"S35","t":"C","p":18.0,"sn":35,"i":238},{"s":"[08] Sistema Eléctrico","e":"Tableros TDU","a":"Preventivo","w":"S35","t":"C","p":15.0,"sn":35,"i":239},{"s":"[52] Infraestructura / Edificio","e":"Aseo bajo piso salas tecnicas - Piso 5","a":"Preventivo","w":"S35","t":"B","p":2.0,"sn":35,"i":240},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Housing","a":"Preventivo","w":"S36","t":"C","p":1.0,"sn":36,"i":241},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala PPAL9","a":"Preventivo","w":"S36","t":"C","p":4.0,"sn":36,"i":242},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala PSSBA","a":"Preventivo","w":"S36","t":"C","p":4.0,"sn":36,"i":243},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Prepago/GSM","a":"Preventivo","w":"S36","t":"C","p":5.0,"sn":36,"i":244},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala SDH","a":"Preventivo","w":"S36","t":"C","p":6.0,"sn":36,"i":245},{"s":"[03] Clima Sala Técnica","e":"Sistemas Chiller","a":"Preventivo","w":"S36","t":"B","p":3.0,"sn":36,"i":246},{"s":"[08] Sistema Eléctrico","e":"Tableros TDU","a":"Preventivo","w":"S36","t":"C","p":15.0,"sn":36,"i":247},{"s":"[52] Infraestructura / Edificio","e":"Servicios de control de plagas","a":"Preventivo","w":"S36","t":"C","p":1.0,"sn":36,"i":248},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Conmutación","a":"Preventivo","w":"S37","t":"C","p":3.0,"sn":37,"i":249},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Crossconect","a":"Preventivo","w":"S37","t":"C","p":1.0,"sn":37,"i":250},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Datos","a":"Preventivo","w":"S37","t":"C","p":3.0,"sn":37,"i":251},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Nokia","a":"Preventivo","w":"S37","t":"C","p":2.0,"sn":37,"i":252},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Pruebas","w":"S37","t":"B","p":7.0,"sn":37,"i":253},{"s":"[08] Sistema Eléctrico","e":"Tableros TDU","a":"Preventivo","w":"S37","t":"C","p":9.0,"sn":37,"i":254},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Energía -2","a":"Preventivo","w":"S37","t":"C","p":3.0,"sn":37,"i":327},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala CCI","a":"Preventivo","w":"S39","t":"C","p":2.0,"sn":39,"i":255},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Energía -1","a":"Preventivo","w":"S39","t":"C","p":9.0,"sn":39,"i":256},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Movil","a":"Preventivo","w":"S39","t":"C","p":2.0,"sn":39,"i":257},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Telxius","a":"Preventivo","w":"S39","t":"C","p":5.0,"sn":39,"i":258},{"s":"[08] Sistema Eléctrico","e":"Medición tableros cargas finales (RED;TE;TI)","a":"Mediciones","w":"S39","t":"A","p":1.0,"sn":39,"i":259},{"s":"[03] Clima Sala Técnica","e":"Sistemas Torres enfriamiento","a":"Preventivo","w":"S40","t":"C","p":6.0,"sn":40,"i":260},{"s":"[08] Sistema Eléctrico","e":"Sistema de energía Empalme 1","a":"Preventivo","w":"S40","t":"B","p":6.0,"sn":40,"i":261},{"s":"[52] Infraestructura / Edificio","e":"Servicios de control de plagas","a":"Preventivo","w":"S40","t":"C","p":1.0,"sn":40,"i":262},{"s":"[03] Clima Sala Técnica","e":"Sistemas Torres enfriamiento","a":"Preventivo","w":"S41","t":"C","p":3.0,"sn":41,"i":263},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Pruebas","w":"S41","t":"B","p":7.0,"sn":41,"i":264},{"s":"[08] Sistema Eléctrico","e":"Sistema de energía Empalme 2","a":"Preventivo","w":"S41","t":"B","p":2.0,"sn":41,"i":265},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 1","a":"Preventivo","w":"S42","t":"C","p":4.0,"sn":42,"i":266},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 2","a":"Preventivo","w":"S42","t":"C","p":4.0,"sn":42,"i":267},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 3","a":"Preventivo","w":"S42","t":"C","p":4.0,"sn":42,"i":268},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 4","a":"Preventivo","w":"S42","t":"C","p":9.0,"sn":42,"i":269},{"s":"[08] Sistema Eléctrico","e":"Sistema de energía Empalme 3","a":"Preventivo","w":"S42","t":"B","p":3.0,"sn":42,"i":270},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Banda Ancha","a":"Preventivo","w":"S43","t":"C","p":1.0,"sn":43,"i":271},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala NOC","a":"Preventivo","w":"S43","t":"C","p":3.0,"sn":43,"i":273},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 5","a":"Preventivo","w":"S43","t":"C","p":4.0,"sn":43,"i":274},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TIC 6","a":"Preventivo","w":"S43","t":"C","p":6.0,"sn":43,"i":275},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala UPS RESO","a":"Preventivo","w":"S43","t":"C","p":2.0,"sn":43,"i":276},{"s":"[03] Clima Sala Técnica","e":"Sistemas Chiller","a":"Preventivo","w":"S43","t":"B","p":3.0,"sn":43,"i":277},{"s":"[08] Sistema Eléctrico","e":"Medición tableros cargas finales (RED;TE;TI)","a":"Mediciones","w":"S43","t":"A","p":1.0,"sn":43,"i":278},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala CPD","a":"Preventivo","w":"S44","t":"C","p":8.0,"sn":44,"i":279},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Comunicaciones","a":"Preventivo","w":"S44","t":"C","p":2.0,"sn":44,"i":280},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Midrange","a":"Preventivo","w":"S44","t":"C","p":3.0,"sn":44,"i":281},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala RESO","a":"Preventivo","w":"S44","t":"C","p":18.0,"sn":44,"i":282},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Housing","a":"Preventivo","w":"S45","t":"C","p":1.0,"sn":45,"i":283},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala PPAL9","a":"Preventivo","w":"S45","t":"C","p":4.0,"sn":45,"i":284},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala PSSBA","a":"Preventivo","w":"S45","t":"C","p":4.0,"sn":45,"i":285},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Prepago/GSM","a":"Preventivo","w":"S45","t":"C","p":5.0,"sn":45,"i":286},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala SDH","a":"Preventivo","w":"S45","t":"C","p":6.0,"sn":45,"i":287},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Pruebas","w":"S45","t":"B","p":7.0,"sn":45,"i":288},{"s":"[52] Infraestructura / Edificio","e":"Servicios de control de plagas","a":"Preventivo","w":"S45","t":"C","p":1.0,"sn":45,"i":289},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Alcatel","a":"Preventivo","w":"S46","t":"C","p":2.0,"sn":46,"i":290},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Conmutación","a":"Preventivo","w":"S46","t":"C","p":3.0,"sn":46,"i":291},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Crossconect","a":"Preventivo","w":"S46","t":"C","p":1.0,"sn":46,"i":292},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Datos","a":"Preventivo","w":"S46","t":"C","p":3.0,"sn":46,"i":293},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Nokia","a":"Preventivo","w":"S46","t":"C","p":2.0,"sn":46,"i":294},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala TX","a":"Preventivo","w":"S46","t":"C","p":3.0,"sn":46,"i":295},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS SM48","a":"Medición","w":"S46","t":"C","p":2.0,"sn":46,"i":296},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 1","a":"Medición","w":"S46","t":"C","p":2.0,"sn":46,"i":297},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 2 - 3","a":"Medición","w":"S46","t":"C","p":4.0,"sn":46,"i":298},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 4","a":"Medición","w":"S46","t":"C","p":2.0,"sn":46,"i":299},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS SM48","a":"Preventivo","w":"S46","t":"A","p":1.0,"sn":46,"i":300},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS TIC 1","a":"Preventivo","w":"S46","t":"A","p":1.0,"sn":46,"i":301},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS TIC 2 - 3","a":"Preventivo","w":"S46","t":"A","p":2.0,"sn":46,"i":302},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS TIC 4","a":"Preventivo","w":"S46","t":"A","p":1.0,"sn":46,"i":303},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala CCI","a":"Preventivo","w":"S47","t":"C","p":2.0,"sn":47,"i":304},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Energía -1","a":"Preventivo","w":"S47","t":"C","p":9.0,"sn":47,"i":305},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Movil","a":"Preventivo","w":"S47","t":"C","p":2.0,"sn":47,"i":306},{"s":"[03] Clima Sala Técnica","e":"Sistema HVAC Sala Telxius","a":"Preventivo","w":"S47","t":"C","p":5.0,"sn":47,"i":307},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 5","a":"Medición","w":"S47","t":"C","p":5.0,"sn":47,"i":308},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS TIC 6","a":"Medición","w":"S47","t":"C","p":3.0,"sn":47,"i":309},{"s":"[08] Sistema Eléctrico","e":"Medición tableros cargas finales (RED;TE;TI)","a":"Mediciones","w":"S47","t":"A","p":1.0,"sn":47,"i":310},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS TIC 5","a":"Preventivo","w":"S47","t":"A","p":3.0,"sn":47,"i":311},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS TIC 6","a":"Preventivo","w":"S47","t":"A","p":3.0,"sn":47,"i":312},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS CPD","a":"Medición","w":"S48","t":"C","p":7.0,"sn":48,"i":313},{"s":"[08] Sistema Eléctrico","e":"Bancos de baterías sist. UPS RESO","a":"Medición","w":"S48","t":"C","p":5.0,"sn":48,"i":314},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS CPD","a":"Preventivo","w":"S48","t":"A","p":3.0,"sn":48,"i":315},{"s":"[08] Sistema Eléctrico","e":"Sistema UPS RESO","a":"Preventivo","w":"S48","t":"A","p":3.0,"sn":48,"i":316},{"s":"[52] Infraestructura / Edificio","e":"Sistema de bombas AP Subterraneo 1","a":"Preventivo","w":"S48","t":"C","p":3.0,"sn":48,"i":317},{"s":"[52] Infraestructura / Edificio","e":"Sistema de bombas AP Subterraneo 2","a":"Preventivo","w":"S48","t":"C","p":3.0,"sn":48,"i":318},{"s":"[08] Sistema Eléctrico","e":"Generadores","a":"Pruebas","w":"S49","t":"B","p":7.0,"sn":49,"i":319},{"s":"[52] Infraestructura / Edificio","e":"Servicios de control de plagas","a":"Preventivo","w":"S49","t":"C","p":1.0,"sn":49,"i":320},{"s":"[08] Sistema Eléctrico","e":"Medición tableros cargas finales (RED;TE;TI)","a":"Mediciones","w":"S51","t":"A","p":1.0,"sn":51,"i":321}];
+  <div class="section-title" style="margin-top:26px;">Reservas del día</div>
+  <div id="reservationsList"></div>
 
-        let state = {
-            currentWeek: 25,
-            tasks: []
-        };
-        
-        let chartInstance = null;
-        let riskChartInstance = null;
-        let tipoChartInstance = null;
-        let tipoChartMode = 'mes';
+  <button class="qr-toggle" id="toggleQr">▢ Mostrar código QR para imprimir en la puerta</button>
+  <div class="qr-box" id="qrBox" hidden>
+    <div id="qrcode"></div>
+    <p id="qrRoomLabel">Sala de Reuniones</p>
+    <small>Escanea para ver disponibilidad y reservar</small><br>
+    <button class="qr-print-btn" id="printQr">Imprimir</button>
+  </div>
 
-        // ===================== CONFIGURACIÓN SUPABASE =====================
-        const SUPABASE_URL = 'https://xnlqyxxyryqyziksmajn.supabase.co';
-        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhubHF5eHh5cnlxeXppa3NtYWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NzQxODEsImV4cCI6MjA5NzQ1MDE4MX0.uKhq16RBJSoEKLdjD04DTrHnBOg9IxU2cpREQfSf8S4';
-        const DASHBOARD_ID = 'dcsm-main';
-        // El modo (lectura/administrador) se decide en la ventana de ingreso.
-        // Por defecto SOLO LECTURA hasta validar la clave de administrador.
-        let VIEW_MODE = true;
+</div>
 
-        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        let dirty = false; // hay cambios sin guardar
+<script>
+/* ============================================================
+   CONFIGURACIÓN — completa estos 3 valores antes de publicar
+   ============================================================ */
+const CONFIG = {
+  SUPABASE_URL: "https://xnlqyxxyryqyziksmajn.supabase.co",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhubHF5eHh5cnlxeXppa3NtYWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NzQxODEsImV4cCI6MjA5NzQ1MDE4MX0.uKhq16RBJSoEKLdjD04DTrHnBOg9IxU2cpREQfSf8S4",
+  ROOMS: ["Sala de Reuniones", "Sala Capacitaciones"],
+  HORA_INICIO: 8,   // hora de apertura (24h)
+  HORA_FIN: 20,     // hora de cierre (24h)
+  PASO_MINUTOS: 30  // duración de cada bloque
+};
+/* ============================================================
+   SQL para crear la tabla en Supabase (ejecutar una sola vez):
 
-        function setSync(estado, texto) {
-            const dot = document.getElementById('syncDot');
-            const txt = document.getElementById('syncText');
-            if (!dot || !txt) return;
-            const colores = { ok: 'bg-emerald-400', saving: 'bg-amber-400 animate-alert', err: 'bg-rose-400', warn: 'bg-amber-400', idle: 'bg-slate-300' };
-            dot.className = 'w-2 h-2 rounded-full ' + (colores[estado] || colores.idle);
-            txt.innerText = texto;
-        }
+   create table reservas_sala (
+     id bigint generated always as identity primary key,
+     sala text not null default 'Sala de Reuniones',
+     fecha date not null,
+     hora_inicio time not null,
+     hora_fin time not null,
+     motivo text not null,
+     responsable text not null,
+     correo text not null,
+     created_at timestamptz default now()
+   );
+   alter table reservas_sala enable row level security;
+   create policy "lectura publica" on reservas_sala for select using (true);
+   create policy "insercion publica" on reservas_sala for insert with check (true);
+   create policy "borrado publico" on reservas_sala for delete using (true);
 
-        function actualizarBotonGuardar() {
-            const btn = document.getElementById('btnGuardar');
-            if (!btn) return;
-            if (dirty) {
-                btn.disabled = false;
-                btn.className = 'mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-white text-blue-700 hover:bg-blue-50 transition shadow';
-                btn.innerHTML = '<i class="fas fa-save"></i> Guardar cambios';
-            } else {
-                btn.disabled = true;
-                btn.className = 'mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-white/30 text-white/80 cursor-default transition';
-                btn.innerHTML = '<i class="fas fa-check"></i> Sin cambios pendientes';
-            }
-        }
+   -- Nota: el correo queda guardado en la tabla y por lo tanto es legible
+   -- por cualquiera con la anon key (igual que el resto de las columnas).
+   -- La app evita mostrarlo y evita traerlo en la consulta de la grilla,
+   -- pero esto es una barrera de UI, no una restricción real a nivel de
+   -- base de datos. Si en algún momento quieres que sea inaccesible de
+   -- verdad, la validación de cancelación debería moverse a una función
+   -- RPC (SECURITY DEFINER) en vez de comparar en el navegador.
+   ============================================================ */
 
-        function markDirty() {
-            dirty = true;
-            setSync('warn', 'Cambios sin guardar');
-            actualizarBotonGuardar();
-        }
+let selectedRoom = CONFIG.ROOMS[0];
 
-        async function loadState() {
-            try {
-                setSync('saving', 'Cargando…');
-                const { data, error } = await sb
-                    .from('dashboards')
-                    .select('data')
-                    .eq('id', DASHBOARD_ID)
-                    .maybeSingle();
-                if (error) throw error;
+function renderRoomTabs(){
+  const tabs = document.getElementById('roomTabs');
+  tabs.innerHTML = '';
+  CONFIG.ROOMS.forEach(room=>{
+    const btn = document.createElement('div');
+    btn.className = 'room-tab' + (room === selectedRoom ? ' active' : '');
+    btn.textContent = room;
+    btn.addEventListener('click', async ()=>{
+      if (selectedRoom === room) return;
+      selectedRoom = room;
+      document.getElementById('roomName').textContent = selectedRoom;
+      document.getElementById('qrRoomLabel').textContent = 'Escanea para reservar cualquiera de las salas';
+      selStart = null; selEnd = null;
+      document.getElementById('bookingForm').hidden = true;
+      renderRoomTabs();
+      await refresh();
+    });
+    tabs.appendChild(btn);
+  });
+}
+document.getElementById('roomName').textContent = selectedRoom;
+renderRoomTabs();
+document.getElementById('qrRoomLabel').textContent = 'Escanea para reservar cualquiera de las salas';
 
-                if (data && data.data) {
-                    const saved = data.data;
-                    if (Array.isArray(saved.tasks)) {
-                        const execMap = {};
-                        saved.tasks.forEach(t => { execMap[t.id] = t.ejecutado; });
-                        state.tasks.forEach(t => { if (t.id in execMap) t.ejecutado = execMap[t.id]; });
-                    }
-                    if (typeof saved.currentWeek === 'number') {
-                        state.currentWeek = saved.currentWeek;
-                        const sl = document.getElementById('weekSlider');
-                        sl.value = saved.currentWeek;
-                        document.getElementById('currentWeekDisplay').innerText = 'S' + saved.currentWeek;
-                    }
-                    setSync('ok', VIEW_MODE ? 'Solo lectura' : 'Guardado');
-                } else {
-                    // No hay registro guardado todavía: se creará al pulsar "Guardar cambios"
-                    setSync('idle', VIEW_MODE ? 'Sin datos' : 'Sin datos guardados');
-                }
-            } catch (e) {
-                console.error('Supabase load error:', e);
-                setSync('err', 'Sin conexión');
-            }
-            dirty = false;
-            actualizarBotonGuardar();
-        }
+const usingSupabase = CONFIG.SUPABASE_URL !== "TU_SUPABASE_URL" && CONFIG.SUPABASE_ANON_KEY !== "TU_SUPABASE_ANON_KEY";
+let supabaseClient = null;
+if (usingSupabase) {
+  supabaseClient = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+}
 
-        // Guardado MANUAL: solo se ejecuta al pulsar el botón "Guardar cambios"
-        async function guardarCambios() {
-            if (VIEW_MODE) return;
-            const payload = {
-                id: DASHBOARD_ID,
-                data: {
-                    currentWeek: state.currentWeek,
-                    tasks: state.tasks.map(t => ({ id: t.id, ejecutado: t.ejecutado }))
-                },
-                updated_at: new Date().toISOString()
-            };
-            setSync('saving', 'Guardando…');
-            try {
-                const { error } = await sb.from('dashboards').upsert(payload, { onConflict: 'id' });
-                if (error) throw error;
-                dirty = false;
-                setSync('ok', 'Guardado');
-                actualizarBotonGuardar();
-            } catch (e) {
-                console.error('Supabase save error:', e);
-                setSync('err', 'Error al guardar');
-            }
-        }
-        // ==================================================================
+// Fallback local (solo memoria de esta pestaña) si no hay Supabase configurado
+let localStore = [];
 
-        // ===================== VENTANA DE INGRESO (LOGIN) =====================
-        function mostrarPinAdmin() {
-            document.getElementById('loginChoice').classList.add('hidden');
-            document.getElementById('loginPin').classList.remove('hidden');
-            const inp = document.getElementById('pinInput');
-            inp.value = '';
-            setTimeout(() => inp.focus(), 50);
-        }
+const connIndicator = document.getElementById('connIndicator');
+const connText = document.getElementById('connText');
+if (usingSupabase) {
+  connIndicator.classList.add('ok');
+  connText.textContent = 'Conectado';
+} else {
+  connIndicator.classList.add('local');
+  connText.textContent = 'Modo local (sin guardar)';
+}
 
-        function volverChoice() {
-            document.getElementById('loginPin').classList.add('hidden');
-            document.getElementById('loginChoice').classList.remove('hidden');
-            document.getElementById('pinError').classList.add('hidden');
-        }
+function pad(n){ return n.toString().padStart(2,'0'); }
+function todayISO(){
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+function timeToMin(t){ const [h,m] = t.split(':').map(Number); return h*60+m; }
+function minToTime(m){ return `${pad(Math.floor(m/60))}:${pad(m%60)}`; }
 
-        async function validarPin() {
-            const pin = document.getElementById('pinInput').value.trim();
-            const err = document.getElementById('pinError');
-            const btn = document.getElementById('pinSubmit');
-            err.classList.add('hidden');
-            btn.disabled = true; btn.innerText = 'Validando…';
-            try {
-                // La clave se valida DENTRO de Supabase; nunca llega al navegador
-                const { data, error } = await sb.rpc('verificar_pin', { pin_ingresado: pin });
-                if (error) throw error;
-                if (data === true) {
-                    iniciarDashboard(true);
-                } else {
-                    err.innerHTML = '<i class="fas fa-exclamation-circle"></i> Clave incorrecta';
-                    err.classList.remove('hidden');
-                    btn.disabled = false; btn.innerText = 'Ingresar';
-                }
-            } catch (e) {
-                console.error('Error validando PIN:', e);
-                err.innerHTML = '<i class="fas fa-exclamation-circle"></i> No se pudo validar (revisa conexión / función en Supabase)';
-                err.classList.remove('hidden');
-                btn.disabled = false; btn.innerText = 'Ingresar';
-            }
-        }
+const datePicker = document.getElementById('datePicker');
+datePicker.value = todayISO();
 
-        async function iniciarDashboard(esAdmin) {
-            VIEW_MODE = !esAdmin;
-            const modal = document.getElementById('loginModal');
-            if (modal) modal.style.display = 'none';
-            initData();
-            initUI();
-            await loadState();   // lee lo guardado en Supabase (no escribe)
-            updateAll();
-            if (VIEW_MODE) aplicarModoVista();
-        }
+let selectedDate = datePicker.value;
+let reservations = []; // reservas del día seleccionado
+let selStart = null, selEnd = null;
 
-        document.addEventListener('DOMContentLoaded', () => {
-            // Permitir Enter en el campo de clave
-            const inp = document.getElementById('pinInput');
-            if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') validarPin(); });
+async function fetchReservations(dateStr){
+  if (usingSupabase){
+    // Nota: no se trae la columna "correo" aquí para no exponerla en la
+    // grilla/lista pública. Solo se consulta puntualmente al cancelar.
+    const { data, error } = await supabaseClient
+      .from('reservas_sala')
+      .select('id, sala, fecha, hora_inicio, hora_fin, motivo, responsable')
+      .eq('fecha', dateStr)
+      .eq('sala', selectedRoom)
+      .order('hora_inicio', { ascending: true });
+    if (error){ console.error(error); return []; }
+    return data;
+  } else {
+    return localStore.filter(r => r.fecha === dateStr && r.sala === selectedRoom);
+  }
+}
 
-            // Atajo: ?modo=vista entra directo en lectura (sin mostrar la ventana)
-            const forzarVista = new URLSearchParams(location.search).get('modo') === 'vista';
-            if (forzarVista) iniciarDashboard(false);
-            // Si no, queda visible la ventana de ingreso
-        });
+function isValidEmail(str){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str);
+}
 
-        // Aviso si intenta cerrar/recargar con cambios sin guardar
-        window.addEventListener('beforeunload', (e) => {
-            if (dirty && !VIEW_MODE) { e.preventDefault(); e.returnValue = ''; }
-        });
+function overlaps(aStart,aEnd,bStart,bEnd){
+  return aStart < bEnd && bStart < aEnd;
+}
 
-        function aplicarModoVista() {
-            // Oculta acciones de edición
-            const btn = document.querySelector('button[onclick="marcarAnterioresEjecutadas()"]');
-            if (btn) btn.style.display = 'none';
-            const bg = document.getElementById('btnGuardar');
-            if (bg) bg.style.display = 'none';
-        }
+function buildSlots(){
+  const slots = [];
+  const startMin = CONFIG.HORA_INICIO*60;
+  const endMin = CONFIG.HORA_FIN*60;
+  for(let m=startMin; m<endMin; m+=CONFIG.PASO_MINUTOS){
+    slots.push(m);
+  }
+  return slots;
+}
 
-        function initData() {
-            // Expand shortened keys
-            state.tasks = rawData.map(d => ({
-                Sistema: d.s,
-                Equipo: d.e,
-                Actividad: d.a,
-                Semana: d.w,
-                Semana_Num: d.sn,
-                Tipo: d.t,
-                Programado: d.p,
-                id: d.i,
-                ejecutado: d.sn < 25
-            }));
-            
-            const totalProgAnual = state.tasks.reduce((acc, curr) => acc + curr.Programado, 0);
-            document.getElementById('total-anual-assets').innerText = `${totalProgAnual} activos`;
-            
-            const populate = (id, field, pref="") => {
-                const vals = [...new Set(state.tasks.map(t => t[field]))].sort((a,b) => (typeof a === 'number') ? a-b : a.localeCompare(b));
-                const sel = document.getElementById(id);
-                vals.forEach(v => {
-                    const opt = document.createElement('option');
-                    opt.value = v;
-                    opt.innerText = pref + v;
-                    sel.appendChild(opt);
-                });
-            };
+function renderGrid(){
+  const grid = document.getElementById('timeGrid');
+  grid.innerHTML = '';
+  const slots = buildSlots();
+  const isToday = selectedDate === todayISO();
+  const nowMin = new Date().getHours()*60 + new Date().getMinutes();
 
-            populate('filtroSemana', 'Semana_Num', "S");
-            populate('filtroSistema', 'Sistema');
-            populate('filtroEquipo', 'Equipo');
-            populate('filtroActividad', 'Actividad');
-        }
+  slots.forEach(startMin=>{
+    const endMin = startMin + CONFIG.PASO_MINUTOS;
+    const div = document.createElement('div');
+    div.className = 'slot';
+    div.textContent = minToTime(startMin);
 
-        function initUI() {
-            const slider = document.getElementById('weekSlider');
-            slider.addEventListener('input', (e) => {
-                state.currentWeek = parseInt(e.target.value);
-                document.getElementById('currentWeekDisplay').innerText = `S${state.currentWeek}`;
-                updateAll();
-                if (!VIEW_MODE) markDirty();
-            });
-        }
+    const isPast = isToday && endMin <= nowMin;
+    const busyRes = reservations.find(r => overlaps(startMin,endMin, timeToMin(r.hora_inicio.slice(0,5)), timeToMin(r.hora_fin.slice(0,5))));
 
-        function toggleTask(taskId) {
-            if (VIEW_MODE) return;
-            const t = state.tasks.find(t => t.id === taskId);
-            if(t) {
-                t.ejecutado = !t.ejecutado;
-                updateAll();
-                markDirty();
-            }
-        }
+    if (isPast){
+      div.classList.add('past');
+    } else if (busyRes){
+      div.classList.add('busy');
+      div.title = `${busyRes.responsable}: ${busyRes.motivo}`;
+    } else {
+      div.classList.add('free');
+      div.addEventListener('click', ()=> onSlotClick(startMin));
+    }
 
-        function marcarAnterioresEjecutadas() {
-            if (VIEW_MODE) return;
-            state.tasks.forEach(t => {
-                if(t.Semana_Num <= state.currentWeek) t.ejecutado = true;
-            });
-            updateAll();
-            markDirty();
-        }
+    if (selStart !== null && selEnd !== null && startMin >= selStart && startMin < selEnd){
+      div.classList.remove('free');
+      div.classList.add('selected');
+    }
 
-        function updateAll() {
-            calculateKPIs();
-            renderTable();
-            renderChart();
-            renderRiskChart();
-            renderAreaStats();
-            renderTipoChart();
-        }
+    grid.appendChild(div);
+  });
+}
 
-        function setTipoChartMode(mode) {
-            tipoChartMode = mode;
-            const activo = 'px-4 py-2 bg-blue-600 text-white transition';
-            const inactivo = 'px-4 py-2 bg-white text-gray-600 hover:bg-gray-50 transition';
-            document.getElementById('btnTipoSemana').className = mode === 'semana' ? activo : inactivo;
-            document.getElementById('btnTipoMes').className = mode === 'mes' ? activo : inactivo;
-            renderTipoChart();
-        }
+function onSlotClick(startMin){
+  const endMin = startMin + CONFIG.PASO_MINUTOS;
+  if (selStart === null){
+    selStart = startMin;
+    selEnd = endMin;
+  } else if (startMin === selStart && selEnd === endMin) {
+    // deselect
+    selStart = null; selEnd = null;
+    document.getElementById('bookingForm').hidden = true;
+    renderGrid();
+    return;
+  } else {
+    // extend range if contiguous and free
+    if (startMin >= selEnd){
+      // check all slots between selEnd and endMin are free
+      const slots = buildSlots();
+      const inBetween = slots.filter(s => s >= selStart && s < endMin);
+      const anyBusy = inBetween.some(s => reservations.some(r => overlaps(s, s+CONFIG.PASO_MINUTOS, timeToMin(r.hora_inicio.slice(0,5)), timeToMin(r.hora_fin.slice(0,5)))));
+      if (anyBusy){
+        selStart = startMin; selEnd = endMin;
+      } else {
+        selEnd = endMin;
+      }
+    } else if (startMin < selStart){
+      selStart = startMin;
+    } else {
+      selEnd = endMin;
+    }
+  }
+  showBookingForm();
+  renderGrid();
+}
 
-        function renderTipoChart() {
-            const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-            let labels, A, B, C;
+function showBookingForm(){
+  const form = document.getElementById('bookingForm');
+  form.hidden = false;
+  document.getElementById('rangeLabel').textContent =
+    `${selectedDate}  ·  ${minToTime(selStart)} – ${minToTime(selEnd)}`;
+  document.getElementById('formError').hidden = true;
+}
 
-            if (tipoChartMode === 'mes') {
-                labels = meses;
-                A = Array(12).fill(0); B = Array(12).fill(0); C = Array(12).fill(0);
-                state.tasks.forEach(t => {
-                    // Avance a la fecha: solo ejecutadas y hasta la semana actual
-                    if (!t.ejecutado || t.Semana_Num > state.currentWeek) return;
-                    let m = Math.min(12, Math.ceil(t.Semana_Num / (52/12))) - 1;
-                    if (t.Tipo === 'A') A[m]++; else if (t.Tipo === 'B') B[m]++; else C[m]++;
-                });
-            } else {
-                labels = Array.from({length: 52}, (_, i) => 'S' + (i + 1));
-                A = Array(52).fill(0); B = Array(52).fill(0); C = Array(52).fill(0);
-                state.tasks.forEach(t => {
-                    if (!t.ejecutado || t.Semana_Num > state.currentWeek) return;
-                    let w = t.Semana_Num - 1;
-                    if (t.Tipo === 'A') A[w]++; else if (t.Tipo === 'B') B[w]++; else C[w]++;
-                });
-            }
+document.getElementById('cancelSel').addEventListener('click', ()=>{
+  selStart = null; selEnd = null;
+  document.getElementById('bookingForm').hidden = true;
+  document.getElementById('respInput').value = '';
+  document.getElementById('motivoInput').value = '';
+  renderGrid();
+});
 
-            if (tipoChartInstance) tipoChartInstance.destroy();
-            tipoChartInstance = new Chart(document.getElementById('tipoChart').getContext('2d'), {
-                type: 'bar',
-                data: {
-                    labels,
-                    datasets: [
-                        { label: 'Tipo A (Crítico)', data: A, backgroundColor: '#e11d48', borderRadius: 3 },
-                        { label: 'Tipo B (Medio)',   data: B, backgroundColor: '#f59e0b', borderRadius: 3 },
-                        { label: 'Tipo C (Rutina)',  data: C, backgroundColor: '#3b82f6', borderRadius: 3 }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'top', labels: { font: { weight: 'bold' } } },
-                        tooltip: { mode: 'index', intersect: false }
-                    },
-                    scales: {
-                        x: {
-                            stacked: true,
-                            grid: { display: false },
-                            ticks: {
-                                autoSkip: false,
-                                maxRotation: tipoChartMode === 'mes' ? 0 : 90,
-                                minRotation: tipoChartMode === 'mes' ? 0 : 90,
-                                font: { size: tipoChartMode === 'mes' ? 12 : 9 }
-                            }
-                        },
-                        y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
-                    }
-                }
-            });
+document.getElementById('confirmRes').addEventListener('click', async ()=>{
+  const responsable = document.getElementById('respInput').value.trim();
+  const correo = document.getElementById('emailInput').value.trim();
+  const motivo = document.getElementById('motivoInput').value.trim();
+  const errEl = document.getElementById('formError');
 
-            const cap = document.getElementById('tipoChartCaption');
-            if (cap) cap.innerText = `Actividades ejecutadas hasta la semana actual (S${state.currentWeek}), por criticidad (A crítico · B medio · C rutina).`;
-        }
+  if (!responsable || !correo || !motivo){
+    errEl.textContent = 'Completa tu nombre, correo y el motivo.';
+    errEl.hidden = false;
+    return;
+  }
+  if (!isValidEmail(correo)){
+    errEl.textContent = 'Ingresa un correo válido.';
+    errEl.hidden = false;
+    return;
+  }
 
-        function calculateKPIs() {
-            let totalAnual = 0, totalHastaHoy = 0, realTotal = 0, realHoy = 0, atrasos = 0;
-            
-            state.tasks.forEach(t => {
-                totalAnual += t.Programado;
-                if(t.Semana_Num <= state.currentWeek) totalHastaHoy += t.Programado;
-                
-                if(t.ejecutado) {
-                    realTotal += t.Programado;
-                    if(t.Semana_Num <= state.currentWeek) realHoy += t.Programado;
-                } else {
-                    if(t.Semana_Num <= state.currentWeek) atrasos += t.Programado;
-                }
-            });
-            
-            document.getElementById('kpi-avance').innerText = `${((realTotal/totalAnual)*100||0).toFixed(1)}%`;
-            document.getElementById('kpi-adherencia').innerText = `${((realHoy/totalHastaHoy)*100||100).toFixed(1)}%`;
-            document.getElementById('kpi-atrasos').innerText = atrasos;
-        }
-        
-        // Mapeo dinámico a las tres áreas solicitadas
-        function getAreaName(sistema) {
-            let s = sistema.toLowerCase();
-            if(s.includes('clima') || s.includes('agua') || s.includes('torres') || s.includes('chiller') || s.includes('enfriamiento')) return 'Clima';
-            if(s.includes('eléctrico') || s.includes('electrico') || s.includes('combustible') || s.includes('petroleo')) return 'Energía';
-            if(s.includes('infraestructura') || s.includes('edificio') || s.includes('plagas') || s.includes('incendio') || s.includes('seguridad')) return 'SSGG';
-            return 'SSGG'; // Por defecto
-        }
+  // re-chequear conflictos justo antes de guardar
+  const fresh = await fetchReservations(selectedDate);
+  const conflict = fresh.some(r => overlaps(selStart, selEnd, timeToMin(r.hora_inicio.slice(0,5)), timeToMin(r.hora_fin.slice(0,5))));
+  if (conflict){
+    errEl.textContent = 'Uno de los bloques seleccionados ya fue reservado. Actualiza e intenta de nuevo.';
+    errEl.hidden = false;
+    reservations = fresh;
+    renderGrid();
+    return;
+  }
 
-        function renderAreaStats() {
-            const count = { Clima: {prog:0, real:0}, Energía: {prog:0, real:0}, SSGG: {prog:0, real:0} };
-            
-            // Avance sobre el TOTAL ANUALIZADO: prog = todo el plan del año, real = todo lo ejecutado
-            state.tasks.forEach(t => {
-                let area = getAreaName(t.Sistema);
-                if(count[area] !== undefined) {
-                    count[area].prog += t.Programado;
-                    if(t.ejecutado) count[area].real += t.Programado;
-                }
-            });
+  const nuevaReserva = {
+    sala: selectedRoom,
+    fecha: selectedDate,
+    hora_inicio: minToTime(selStart) + ':00',
+    hora_fin: minToTime(selEnd) + ':00',
+    motivo, responsable, correo
+  };
 
-            let html = '';
-            const conf = { 
-                'Energía': { color: 'amber', icon: 'bolt' },
-                'Clima': { color: 'blue', icon: 'snowflake' },
-                'SSGG': { color: 'emerald', icon: 'building' }
-            };
+  if (usingSupabase){
+    const { error } = await supabaseClient.from('reservas_sala').insert(nuevaReserva);
+    if (error){
+      errEl.textContent = 'Error al guardar: ' + error.message;
+      errEl.hidden = false;
+      return;
+    }
+  } else {
+    nuevaReserva.id = Date.now();
+    localStore.push(nuevaReserva);
+  }
 
-            for(let area in count) {
-                let c = count[area];
-                let pct = c.prog === 0 ? 100 : Math.round((c.real / c.prog) * 100);
-                let col = conf[area].color;
-                let ic = conf[area].icon;
-                
-                html += `
-                    <div>
-                        <div class="flex justify-between items-end mb-1">
-                            <span class="text-xs font-bold text-gray-700 uppercase flex items-center gap-1">
-                                <i class="fas fa-${ic} text-${col}-500 w-4"></i> ${area}
-                            </span>
-                            <span class="text-xs font-black text-${col}-600">${c.real}/${c.prog} (${pct}%)</span>
-                        </div>
-                        <div class="w-full bg-gray-200 rounded-full h-2">
-                            <div class="bg-${col}-500 h-2 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
-                        </div>
-                    </div>
-                `;
-            }
-            document.getElementById('area-stats').innerHTML = html;
-        }
+  selStart = null; selEnd = null;
+  document.getElementById('bookingForm').hidden = true;
+  document.getElementById('respInput').value = '';
+  document.getElementById('emailInput').value = '';
+  document.getElementById('motivoInput').value = '';
+  await refresh();
+});
 
-        function renderTable() {
-            const tbody = document.getElementById('tableBody'); 
-            tbody.innerHTML = '';
-            
-            const fEstado = document.getElementById('filtroEstado').value;
-            const fSemana = document.getElementById('filtroSemana').value;
-            const fSistema = document.getElementById('filtroSistema').value;
-            const fEquipo = document.getElementById('filtroEquipo').value;
-            const fActividad = document.getElementById('filtroActividad').value;
-            const fTipo = document.getElementById('filtroTipo').value;
+let openCancelId = null;
 
-            const filtered = state.tasks.filter(t => {
-                if(fSemana !== 'ALL' && t.Semana_Num !== parseInt(fSemana)) return false;
-                if(fSistema !== 'ALL' && t.Sistema !== fSistema) return false;
-                if(fEquipo !== 'ALL' && t.Equipo !== fEquipo) return false;
-                if(fActividad !== 'ALL' && t.Actividad !== fActividad) return false;
-                if(fTipo !== 'ALL' && t.Tipo !== fTipo) return false;
-                
-                let est = t.ejecutado ? 'EJECUTADO' : (t.Semana_Num <= state.currentWeek ? 'ATRASADO' : 'PENDIENTE');
-                if(fEstado !== 'ALL' && est !== fEstado) return false;
-                
-                return true;
-            });
+function toggleCancelInline(id){
+  openCancelId = (openCancelId === id) ? null : id;
+  renderList();
+}
 
-            // Orden estricto S1 a S52
-            filtered.sort((a, b) => a.Semana_Num - b.Semana_Num || a.Sistema.localeCompare(b.Sistema));
+async function verifyAndDelete(id, enteredEmail, errEl){
+  enteredEmail = enteredEmail.trim().toLowerCase();
+  if (!enteredEmail){
+    errEl.textContent = 'Ingresa el correo con el que reservaste.';
+    errEl.hidden = false;
+    return;
+  }
 
-            filtered.forEach(t => {
-                let badge = t.ejecutado ? 
-                    `<span class="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-3 py-1 rounded-full border border-emerald-200">🟢 Ejecutado</span>` : 
-                    (t.Semana_Num <= state.currentWeek ? 
-                        `<span class="bg-rose-50 text-rose-700 text-[10px] font-bold px-3 py-1 rounded-full border border-rose-200 animate-alert">🔴 Atrasado</span>` : 
-                        `<span class="bg-slate-100 text-slate-600 text-[10px] font-bold px-3 py-1 rounded-full border border-slate-200">⚪ Futuro</span>`);
-                
-                let tipoBg = t.Tipo === 'A' ? 'bg-rose-600' : (t.Tipo === 'B' ? 'bg-amber-500' : 'bg-blue-500');
-                let riskBadge = `<span class="px-2 py-1 rounded font-bold text-white text-[10px] ${tipoBg}">Tipo ${t.Tipo}</span>`;
+  if (usingSupabase){
+    const { data, error } = await supabaseClient
+      .from('reservas_sala')
+      .select('correo')
+      .eq('id', id)
+      .single();
+    if (error){
+      errEl.textContent = 'No se pudo verificar: ' + error.message;
+      errEl.hidden = false;
+      return;
+    }
+    if (!data || data.correo.trim().toLowerCase() !== enteredEmail){
+      errEl.textContent = 'Ese correo no coincide con el de la reserva.';
+      errEl.hidden = false;
+      return;
+    }
+    const { error: delError } = await supabaseClient.from('reservas_sala').delete().eq('id', id);
+    if (delError){
+      errEl.textContent = 'Error al cancelar: ' + delError.message;
+      errEl.hidden = false;
+      return;
+    }
+  } else {
+    const res = localStore.find(r => r.id === id);
+    if (!res || res.correo.trim().toLowerCase() !== enteredEmail){
+      errEl.textContent = 'Ese correo no coincide con el de la reserva.';
+      errEl.hidden = false;
+      return;
+    }
+    localStore = localStore.filter(r => r.id !== id);
+  }
 
-                const tr = document.createElement('tr');
-                tr.className = "bg-white hover:bg-blue-50/50 transition";
-                tr.innerHTML = `
-                    <td class="px-5 py-3">${badge}</td>
-                    <td class="px-5 py-3 text-center">${riskBadge}</td>
-                    <td class="px-5 py-3 text-center font-black text-gray-900">S${t.Semana_Num}</td>
-                    <td class="px-5 py-3 text-gray-700 font-medium">${t.Sistema}</td>
-                    <td class="px-5 py-3 text-gray-600">${t.Equipo}</td>
-                    <td class="px-5 py-3 text-gray-500 font-semibold">${t.Actividad}</td>
-                    <td class="px-5 py-3 text-center font-black text-blue-700">${t.Programado}</td>
-                    <td class="px-5 py-3 text-center">
-                        <div class="relative inline-block w-12 align-middle select-none transition duration-200 ease-in">
-                            <input type="checkbox" id="toggle-${t.id}" ${t.ejecutado ? 'checked' : ''} ${VIEW_MODE ? 'disabled' : `onclick="toggleTask(${t.id})"`} class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer ${VIEW_MODE ? 'opacity-60 cursor-not-allowed' : ''}"/>
-                            <label for="toggle-${t.id}" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
-                        </div>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-        }
+  openCancelId = null;
+  await refresh();
+}
 
-        function renderChart() {
-            const prog = Array(52).fill(0), ejec = Array(52).fill(0);
-            state.tasks.forEach(t => { 
-                prog[t.Semana_Num-1] += t.Programado; 
-                if(t.ejecutado) ejec[t.Semana_Num-1] += t.Programado; 
-            });
+function renderList(){
+  const list = document.getElementById('reservationsList');
+  list.innerHTML = '';
+  if (reservations.length === 0){
+    list.innerHTML = '<div class="empty-msg">No hay reservas para este día.</div>';
+    return;
+  }
+  reservations.forEach(r=>{
+    const wrap = document.createElement('div');
+    wrap.className = 'res-item-wrap';
 
-            if(chartInstance) chartInstance.destroy();
-            const ctx = document.getElementById('mainChart').getContext('2d');
-            chartInstance = new Chart(ctx, {
-                type: 'bar', 
-                data: { 
-                    labels: Array.from({length: 52}, (_,i)=>'S'+(i+1)), 
-                    datasets: [
-                        { label: 'Programado (Plan)', data: prog, backgroundColor: '#cbd5e1', borderRadius: 4 }, 
-                        { label: 'Ejecutado (Real)', data: ejec, backgroundColor: '#10b981', borderRadius: 4 }
-                    ] 
-                },
-                options: { 
-                    responsive: true, 
-                    maintainAspectRatio: false, 
-                    plugins: { legend: { position: 'top', labels: { font: { weight: 'bold' } } } },
-                    scales: { 
-                        x: { 
-                            grid: { display: false }, 
-                            ticks: { 
-                                autoSkip: false, 
-                                maxRotation: 90, 
-                                minRotation: 90, 
-                                font: { size: 9 } 
-                            } 
-                        }, 
-                        y: { beginAtZero: true } 
-                    } 
-                }
-            });
-        }
+    const item = document.createElement('div');
+    item.className = 'res-item';
+    item.innerHTML = `
+      <div>
+        <div class="hora">${r.hora_inicio.slice(0,5)} – ${r.hora_fin.slice(0,5)}</div>
+        <div class="motivo">${escapeHtml(r.motivo)}</div>
+        <div class="responsable">${escapeHtml(r.responsable)}</div>
+      </div>
+      <button class="del" title="Cancelar reserva">✕</button>
+    `;
+    item.querySelector('.del').addEventListener('click', ()=> toggleCancelInline(r.id));
+    wrap.appendChild(item);
 
-        function renderRiskChart() {
-            const count = { A: { prog: 0, real: 0, total: 0 }, B: { prog: 0, real: 0, total: 0 }, C: { prog: 0, real: 0, total: 0 } };
-            
-            state.tasks.forEach(t => {
-                count[t.Tipo].total += t.Programado;
-                if(t.Semana_Num <= state.currentWeek) count[t.Tipo].prog += t.Programado;
-                if(t.ejecutado && t.Semana_Num <= state.currentWeek) count[t.Tipo].real += t.Programado;
-            });
+    if (openCancelId === r.id){
+      const panel = document.createElement('div');
+      panel.className = 'cancel-inline';
+      panel.innerHTML = `
+        <div class="field">
+          <label>Confirma el correo con el que reservaste</label>
+          <input type="email" placeholder="tu.correo@empresa.com" class="cancel-email">
+        </div>
+        <div class="actions">
+          <button class="btn btn-ghost cancel-back">Volver</button>
+          <button class="btn btn-primary cancel-confirm">Cancelar reserva</button>
+        </div>
+        <div class="err" hidden></div>
+      `;
+      const errEl = panel.querySelector('.err');
+      const emailField = panel.querySelector('.cancel-email');
+      panel.querySelector('.cancel-back').addEventListener('click', ()=>{ openCancelId = null; renderList(); });
+      panel.querySelector('.cancel-confirm').addEventListener('click', ()=> verifyAndDelete(r.id, emailField.value, errEl));
+      wrap.appendChild(panel);
+    }
 
-            if(riskChartInstance) riskChartInstance.destroy();
-            riskChartInstance = new Chart(document.getElementById('riskChart').getContext('2d'), {
-                type: 'doughnut',
-                data: { 
-                    labels: ['Tipo A', 'Tipo B', 'Tipo C'], 
-                    datasets: [{ data: [count.A.total, count.B.total, count.C.total], backgroundColor: ['#e11d48', '#f59e0b', '#3b82f6'], borderWidth: 2 }] 
-                },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: '70%' }
-            });
+    list.appendChild(wrap);
+  });
+}
 
-            const statsDiv = document.getElementById('risk-stats');
-            statsDiv.innerHTML = `
-                <div class="flex justify-between items-center border-b pb-1">
-                    <span class="font-bold text-rose-700 text-xs"><i class="fas fa-circle text-[8px] mr-1"></i>Tipo A</span> 
-                    <span class="font-black text-rose-700 bg-rose-100 px-2 py-0.5 rounded text-xs">${count.A.real}/${count.A.prog} (${((count.A.real/count.A.prog)*100||100).toFixed(0)}%)</span>
-                </div>
-                <div class="flex justify-between items-center border-b pb-1">
-                    <span class="font-bold text-amber-600 text-xs"><i class="fas fa-circle text-[8px] mr-1"></i>Tipo B</span> 
-                    <span class="font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded text-xs">${count.B.real}/${count.B.prog} (${((count.B.real/count.B.prog)*100||100).toFixed(0)}%)</span>
-                </div>
-                <div class="flex justify-between items-center">
-                    <span class="font-bold text-blue-600 text-xs"><i class="fas fa-circle text-[8px] mr-1"></i>Tipo C</span> 
-                    <span class="font-black text-blue-700 bg-blue-100 px-2 py-0.5 rounded text-xs">${count.C.real}/${count.C.prog} (${((count.C.real/count.C.prog)*100||100).toFixed(0)}%)</span>
-                </div>
-            `;
-        }
-    </script>
+function escapeHtml(str){
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function renderStatus(){
+  const dot = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  const sub = document.getElementById('statusSub');
+
+  if (selectedDate !== todayISO()){
+    dot.className = 'dot';
+    text.textContent = `Viendo ${selectedDate}`;
+    sub.textContent = '';
+    return;
+  }
+
+  const nowMin = new Date().getHours()*60 + new Date().getMinutes();
+  const current = reservations.find(r => timeToMin(r.hora_inicio.slice(0,5)) <= nowMin && nowMin < timeToMin(r.hora_fin.slice(0,5)));
+
+  if (current){
+    dot.className = 'dot busy';
+    text.textContent = `Ocupada hasta las ${current.hora_fin.slice(0,5)}`;
+    sub.textContent = `${current.motivo} — ${current.responsable}`;
+  } else {
+    dot.className = 'dot free';
+    const next = reservations
+      .map(r => timeToMin(r.hora_inicio.slice(0,5)))
+      .filter(m => m > nowMin)
+      .sort((a,b)=>a-b)[0];
+    text.textContent = 'Libre ahora';
+    sub.textContent = next !== undefined ? `Próxima reserva a las ${minToTime(next)}` : 'Sin reservas pendientes hoy';
+  }
+}
+
+async function refresh(){
+  reservations = await fetchReservations(selectedDate);
+  renderGrid();
+  renderList();
+  renderStatus();
+}
+
+document.getElementById('datePicker').addEventListener('change', async (e)=>{
+  selectedDate = e.target.value;
+  selStart = null; selEnd = null;
+  document.getElementById('bookingForm').hidden = true;
+  await refresh();
+});
+
+document.getElementById('prevDay').addEventListener('click', async ()=>{
+  const d = new Date(selectedDate + 'T00:00:00');
+  d.setDate(d.getDate()-1);
+  selectedDate = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  datePicker.value = selectedDate;
+  selStart = null; selEnd = null;
+  document.getElementById('bookingForm').hidden = true;
+  await refresh();
+});
+
+document.getElementById('nextDay').addEventListener('click', async ()=>{
+  const d = new Date(selectedDate + 'T00:00:00');
+  d.setDate(d.getDate()+1);
+  selectedDate = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  datePicker.value = selectedDate;
+  selStart = null; selEnd = null;
+  document.getElementById('bookingForm').hidden = true;
+  await refresh();
+});
+
+// QR
+let qrRendered = false;
+document.getElementById('toggleQr').addEventListener('click', ()=>{
+  const box = document.getElementById('qrBox');
+  box.hidden = !box.hidden;
+  if (!box.hidden && !qrRendered){
+    new QRCode(document.getElementById('qrcode'), {
+      text: window.location.href.split('#')[0].split('?')[0],
+      width: 200, height: 200,
+      colorDark: '#0B1220', colorLight: '#ffffff'
+    });
+    qrRendered = true;
+  }
+});
+document.getElementById('printQr').addEventListener('click', ()=> window.print());
+
+// refrescar el estado (libre/ocupada) cada minuto
+setInterval(renderStatus, 60000);
+
+refresh();
+</script>
 </body>
 </html>
